@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, ShoppingBag, User, Phone, MapPin, CreditCard, Banknote, Loader2 } from 'lucide-react'
 import { useCart } from '../context/CartContext'
-import api from '../services/api'
 
 const CheckoutPage = () => {
   const { cartItems, totalItems, totalAmount, clearCart } = useCart()
@@ -72,20 +71,32 @@ const CheckoutPage = () => {
         paymentMethod: form.paymentMethod,
         items: cartItems.map((i) => ({
           itemId: i._id,
+          name: i.name,      // send name too for better error messages
           quantity: i.quantity,
         })),
       }
 
-      const res = await api.post('/orders', payload)
+      // Use native fetch to avoid any axios interceptor interference
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
 
-      if (res.data.success) {
-        const orderId = res.data.data._id
+      const data = await res.json()
+
+      if (data.success) {
+        const orderId = data.data._id
         clearCart()
-        navigate(`/order-success?orderId=${orderId}&name=${encodeURIComponent(form.customerName.trim())}&total=${totalAmount}`)
+        navigate(
+          `/order-success?orderId=${orderId}&name=${encodeURIComponent(form.customerName.trim())}&total=${totalAmount}`
+        )
+      } else {
+        setServerError(data.message || 'Something went wrong. Please try again.')
       }
     } catch (err) {
-      const msg = err.response?.data?.message || 'Something went wrong. Please try again.'
-      setServerError(msg)
+      console.error('Order placement error:', err)
+      setServerError('Network error. Please check your connection and try again.')
     } finally {
       setPlacing(false)
     }
@@ -227,7 +238,6 @@ const CheckoutPage = () => {
                 Payment Method *
               </label>
               <div className="grid grid-cols-2 gap-3">
-                {/* COD */}
                 <button
                   type="button"
                   onClick={() => setForm((p) => ({ ...p, paymentMethod: 'COD' }))}
@@ -243,8 +253,6 @@ const CheckoutPage = () => {
                     <p className="text-xs text-gray-400">Pay on delivery</p>
                   </div>
                 </button>
-
-                {/* ONLINE */}
                 <button
                   type="button"
                   onClick={() => setForm((p) => ({ ...p, paymentMethod: 'ONLINE' }))}
@@ -266,7 +274,7 @@ const CheckoutPage = () => {
             {/* Server Error */}
             {serverError && (
               <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
-                {serverError}
+                ⚠️ {serverError}
               </div>
             )}
 

@@ -1,4 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, Outlet } from 'react-router-dom'
+
 import { 
   LayoutDashboard, 
   ShoppingCart, 
@@ -89,7 +91,7 @@ const AdminLayout = ({ children }) => {
 
         {/* Main content */}
         <main className="flex-1 p-8 overflow-y-auto">
-          {children}
+        <Outlet />
         </main>
       </div>
     </div>

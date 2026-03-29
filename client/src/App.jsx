@@ -7,28 +7,21 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* Public */}
         <Route path="/login" element={<Login />} />
-        
-        {/* Protected Admin */}
-        <Route 
-          path="/admin" 
-          element={
-            <ProtectedRoute>
-              <AdminLayout>
-                <Routes>
-                  <Route path="dashboard" element={<div className="text-2xl font-bold text-gray-900">Dashboard</div>} />
-                  <Route path="orders" element={<div className="text-2xl font-bold text-gray-900">Orders</div>} />
-                  <Route path="menu" element={<div className="text-2xl font-bold text-gray-900">Menu</div>} />
-                  <Route index element={<Navigate to="dashboard" replace />} />
-                </Routes>
-              </AdminLayout>
-            </ProtectedRoute>
-          } 
-        />
-        
+
+        <Route path="/admin" element={
+          <ProtectedRoute>
+            <AdminLayout />
+          </ProtectedRoute>
+        }>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<div className="text-2xl font-bold">Dashboard</div>} />
+          <Route path="orders" element={<div className="text-2xl font-bold">Orders</div>} />
+          <Route path="menu" element={<div className="text-2xl font-bold">Menu</div>} />
+        </Route>
+
         <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="*" element={<div className="min-h-screen flex items-center justify-center text-xl">Page Not Found</div>} />
+        <Route path="*" element={<div className="min-h-screen flex items-center justify-center">Page Not Found</div>} />
       </Routes>
     </Router>
   )

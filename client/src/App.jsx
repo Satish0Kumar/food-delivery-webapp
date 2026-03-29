@@ -3,17 +3,22 @@ import Login from './components/Login'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminLayout from './components/AdminLayout'
 import Dashboard from './pages/Dashboard'
-import Orders from './pages/Orders'   // ← ADD THIS
+import Orders from './pages/Orders'
 import Menu from './pages/Menu'
+import Home from './pages/Home'
 
 function App() {
   return (
     <Router>
       <Routes>
-        {/* Public */}
+
+        {/* ── Customer Public Routes ── */}
+        <Route path="/" element={<Home />} />
+
+        {/* ── Admin Auth ── */}
         <Route path="/login" element={<Login />} />
 
-        {/* Protected Admin Routes */}
+        {/* ── Protected Admin Routes ── */}
         <Route
           path="/admin"
           element={
@@ -28,13 +33,16 @@ function App() {
           <Route path="menu" element={<Menu />} />
         </Route>
 
-        {/* Redirects */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="*" element={
-          <div className="min-h-screen flex items-center justify-center text-xl text-gray-600">
-            Page Not Found
-          </div>
-        } />
+        {/* ── 404 ── */}
+        <Route
+          path="*"
+          element={
+            <div className="min-h-screen flex items-center justify-center text-xl text-gray-600">
+              Page Not Found
+            </div>
+          }
+        />
+
       </Routes>
     </Router>
   )

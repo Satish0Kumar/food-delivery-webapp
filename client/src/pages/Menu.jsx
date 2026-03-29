@@ -329,18 +329,50 @@ const Menu = () => {
                 </div>
               </div>
 
-              {/* Image URL */}
+              {/* Image Upload — replaces the old URL input */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Image URL (optional)
+                  Food Image
                 </label>
+
+                {/* Preview existing image */}
+                {form.image && (
+                  <img
+                    src={form.image}
+                    alt="Preview"
+                    className="w-full h-36 object-cover rounded-xl mb-2 border border-gray-200"
+                  />
+                )}
+
                 <input
-                  type="url"
-                  value={form.image}
-                  onChange={e => setForm({ ...form, image: e.target.value })}
-                  placeholder="https://..."
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files[0]
+                    if (!file) return
+
+                    const formData = new FormData()
+                    formData.append('image', file)
+
+                    try {
+                      const res = await fetch('/api/upload', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}` },
+                        body: formData,
+                      })
+                      const data = await res.json()
+                      if (data.success) {
+                        setForm(prev => ({ ...prev, image: data.url }))
+                      } else {
+                        setError('Image upload failed')
+                      }
+                    } catch {
+                      setError('Image upload failed')
+                    }
+                  }}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
                 />
+                <p className="text-xs text-gray-400 mt-1">JPG, PNG, WebP — max 5MB</p>
               </div>
 
               {/* Availability */}

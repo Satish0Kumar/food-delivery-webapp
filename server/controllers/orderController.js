@@ -1,5 +1,7 @@
 const Order = require("../models/Order");
 const Item = require("../models/Item");
+const { sendOrderEmail } = require("../utils/sendEmail");
+const { sendPushNotification } = require("../utils/sendNotification");
 
 // @desc    Place new order (Customer)
 // @route   POST /api/orders
@@ -52,13 +54,19 @@ const placeOrder = async (req, res) => {
 
     const io = req.app.get("io");
     if (io) {
-    io.emit("new-order", {
+      io.emit("new-order", {
         orderId: order._id,
         customerName,
         totalAmount,
         phone,
-    });
+      });
     }
+
+    // Email notification — fire and forget
+    sendOrderEmail(order);
+
+    // FCM push notification — fire and forget
+    sendPushNotification(order);
 
     res.status(201).json({
       success: true,

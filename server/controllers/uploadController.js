@@ -1,10 +1,6 @@
 const cloudinary = require("cloudinary").v2;
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+// NOTE: cloudinary.config() is called once globally in server.js
+// Do NOT call cloudinary.config() here — it would run before dotenv loads
 
 /**
  * Stream file buffer from memory directly to Cloudinary
@@ -41,8 +37,7 @@ const uploadImage = async (req, res) => {
         .json({ success: false, message: "No file uploaded" });
     }
 
-    // Check Cloudinary credentials are configured
-    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY) {
+    if (!process.env.CLOUDINARY_API_KEY) {
       return res.status(500).json({
         success: false,
         message: "Cloudinary not configured. Add credentials to .env",
@@ -53,8 +48,8 @@ const uploadImage = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      url: result.secure_url,       // HTTPS Cloudinary URL
-      public_id: result.public_id,  // For future deletion support
+      url: result.secure_url,
+      public_id: result.public_id,
     });
   } catch (error) {
     console.error("Upload error:", error);

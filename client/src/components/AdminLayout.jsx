@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom'
+
 import { Link, useLocation, Outlet } from 'react-router-dom'
 
 import { 
@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { logout } from '../utils/auth'
 
-const AdminLayout = ({ children }) => {
+const AdminLayout = () => {
   const location = useLocation()
   const admin = JSON.parse(localStorage.getItem('admin') || '{}')
 

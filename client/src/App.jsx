@@ -9,6 +9,8 @@ import Orders from './pages/Orders'
 import Menu from './pages/Menu'
 import Home from './pages/Home'
 import MenuPage from './pages/MenuPage'
+import CheckoutPage from './pages/CheckoutPage'
+import OrderSuccessPage from './pages/OrderSuccessPage'
 
 function App() {
   return (
@@ -22,6 +24,8 @@ function App() {
           {/* ── Customer Public Routes ── */}
           <Route path="/" element={<Home />} />
           <Route path="/menu" element={<MenuPage />} />
+          <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/order-success" element={<OrderSuccessPage />} />
 
           {/* ── Admin Auth ── */}
           <Route path="/login" element={<Login />} />

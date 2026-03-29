@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import Orders from './pages/Orders'
 import Menu from './pages/Menu'
 import Home from './pages/Home'
+import MenuPage from './pages/MenuPage'
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
 
         {/* ── Customer Public Routes ── */}
         <Route path="/" element={<Home />} />
+        <Route path="/menu" element={<MenuPage />} />
 
         {/* ── Admin Auth ── */}
         <Route path="/login" element={<Login />} />

@@ -1,4 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { CartProvider } from './context/CartContext'
+import CartDrawer from './components/CartDrawer'
 import Login from './components/Login'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminLayout from './components/AdminLayout'
@@ -10,43 +12,48 @@ import MenuPage from './pages/MenuPage'
 
 function App() {
   return (
-    <Router>
-      <Routes>
+    <CartProvider>
+      <Router>
+        {/* CartDrawer lives outside Routes so it overlays any page */}
+        <CartDrawer />
 
-        {/* ── Customer Public Routes ── */}
-        <Route path="/" element={<Home />} />
-        <Route path="/menu" element={<MenuPage />} />
+        <Routes>
 
-        {/* ── Admin Auth ── */}
-        <Route path="/login" element={<Login />} />
+          {/* ── Customer Public Routes ── */}
+          <Route path="/" element={<Home />} />
+          <Route path="/menu" element={<MenuPage />} />
 
-        {/* ── Protected Admin Routes ── */}
-        <Route
-          path="/admin"
-          element={
-            <ProtectedRoute>
-              <AdminLayout />
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="orders" element={<Orders />} />
-          <Route path="menu" element={<Menu />} />
-        </Route>
+          {/* ── Admin Auth ── */}
+          <Route path="/login" element={<Login />} />
 
-        {/* ── 404 ── */}
-        <Route
-          path="*"
-          element={
-            <div className="min-h-screen flex items-center justify-center text-xl text-gray-600">
-              Page Not Found
-            </div>
-          }
-        />
+          {/* ── Protected Admin Routes ── */}
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <AdminLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="orders" element={<Orders />} />
+            <Route path="menu" element={<Menu />} />
+          </Route>
 
-      </Routes>
-    </Router>
+          {/* ── 404 ── */}
+          <Route
+            path="*"
+            element={
+              <div className="min-h-screen flex items-center justify-center text-xl text-gray-600">
+                Page Not Found
+              </div>
+            }
+          />
+
+        </Routes>
+      </Router>
+    </CartProvider>
   )
 }
 

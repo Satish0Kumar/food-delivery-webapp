@@ -78,7 +78,11 @@ const Menu = () => {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ ...form, price: Number(form.price) })
+        body: JSON.stringify({
+          ...form,
+          price: Number(form.price),
+          image: form.image || 'https://via.placeholder.com/300x200?text=No+Image'
+        })
       })
       const data = await res.json()
       if (data.success) {
@@ -112,11 +116,7 @@ const Menu = () => {
     try {
       const res = await fetch(`/api/items/${item._id}/availability`, {
         method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ isAvailable: !item.isAvailable })
+        headers: { 'Authorization': `Bearer ${token}` }
       })
       const data = await res.json()
       if (data.success) {

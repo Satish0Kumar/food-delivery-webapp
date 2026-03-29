@@ -27,7 +27,7 @@ const Menu = () => {
   const fetchMenu = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/menu', {
+      const res = await fetch('/api/items', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       const data = await res.json()
@@ -70,7 +70,7 @@ const Menu = () => {
     e.preventDefault()
     setSaving(true)
     try {
-      const url = editItem ? `/api/menu/${editItem._id}` : '/api/menu'
+      const url = editItem ? `/api/items/${editItem._id}` : '/api/items'
       const method = editItem ? 'PUT' : 'POST'
       const res = await fetch(url, {
         method,
@@ -97,7 +97,7 @@ const Menu = () => {
   const deleteItem = async (id) => {
     if (!window.confirm('Delete this menu item?')) return
     try {
-      const res = await fetch(`/api/menu/${id}`, {
+      const res = await fetch(`/api/items/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -110,13 +110,13 @@ const Menu = () => {
 
   const toggleAvailability = async (item) => {
     try {
-      const res = await fetch(`/api/menu/${item._id}`, {
-        method: 'PUT',
+      const res = await fetch(`/api/items/${item._id}/availability`, {
+        method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ ...item, isAvailable: !item.isAvailable })
+        body: JSON.stringify({ isAvailable: !item.isAvailable })
       })
       const data = await res.json()
       if (data.success) {

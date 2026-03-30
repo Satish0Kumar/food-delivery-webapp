@@ -3,20 +3,19 @@ import { RefreshCw, ShoppingBag, Eye, Bell, X, ChevronDown } from 'lucide-react'
 import { io } from 'socket.io-client'
 import OrderDetailModal from '../components/OrderDetailModal'
 
-const STATUS_OPTIONS = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Delivered', 'Cancelled']
+const STATUS_OPTIONS = ['Placed', 'Preparing', 'Out for Delivery', 'Delivered', 'Cancelled']
 
 const STATUS_COLORS = {
-  Pending:           'bg-yellow-100 text-yellow-800 border-yellow-200',
-  Confirmed:         'bg-blue-100 text-blue-800 border-blue-200',
+  Placed:            'bg-yellow-100 text-yellow-800 border-yellow-200',
   Preparing:         'bg-purple-100 text-purple-800 border-purple-200',
   'Out for Delivery':'bg-orange-100 text-orange-800 border-orange-200',
   Delivered:         'bg-green-100 text-green-800 border-green-200',
   Cancelled:         'bg-red-100 text-red-800 border-red-200',
 }
 
+// Only valid next steps per status
 const STATUS_FLOW = {
-  Pending:           ['Confirmed', 'Cancelled'],
-  Confirmed:         ['Preparing', 'Cancelled'],
+  Placed:            ['Preparing', 'Cancelled'],
   Preparing:         ['Out for Delivery', 'Cancelled'],
   'Out for Delivery':['Delivered'],
   Delivered:         [],
@@ -30,12 +29,11 @@ const Orders = () => {
   const [updatingId, setUpdatingId]   = useState(null)
   const [filterStatus, setFilterStatus] = useState('All')
   const [selectedOrder, setSelectedOrder] = useState(null)
-  const [newOrderAlert, setNewOrderAlert] = useState(null)  // { orderId, customerName, totalAmount }
+  const [newOrderAlert, setNewOrderAlert] = useState(null)
   const [alertVisible, setAlertVisible]   = useState(false)
 
   const token = localStorage.getItem('token')
 
-  // ── Fetch all orders ──
   const fetchOrders = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -55,26 +53,19 @@ const Orders = () => {
 
   useEffect(() => { fetchOrders() }, [fetchOrders])
 
-  // ── Socket.io — listen for new orders in real-time ──
+  // Socket.io — real-time new order alert
   useEffect(() => {
     const socket = io('http://localhost:5000', { transports: ['websocket'] })
-
     socket.on('new-order', (payload) => {
-      // Re-fetch full orders list to get populated item details
       fetchOrders()
-      // Show toast alert
       setNewOrderAlert(payload)
       setAlertVisible(true)
-      // Play browser notification sound
       try { new Audio('https://www.soundjay.com/buttons/beep-07a.mp3').play() } catch {}
-      // Auto-hide alert after 6 seconds
       setTimeout(() => setAlertVisible(false), 6000)
     })
-
     return () => socket.disconnect()
   }, [fetchOrders])
 
-  // ── Update order status ──
   const updateStatus = async (orderId, newStatus) => {
     setUpdatingId(orderId)
     try {
@@ -91,7 +82,6 @@ const Orders = () => {
         setOrders((prev) =>
           prev.map((o) => (o._id === orderId ? { ...o, orderStatus: newStatus } : o))
         )
-        // Update selected order modal too if open
         if (selectedOrder?._id === orderId) {
           setSelectedOrder((prev) => ({ ...prev, orderStatus: newStatus }))
         }
@@ -107,12 +97,11 @@ const Orders = () => {
     ? orders
     : orders.filter((o) => o.orderStatus === filterStatus)
 
-  // Today's stats
   const today = new Date().toDateString()
-  const todayOrders   = orders.filter((o) => new Date(o.createdAt).toDateString() === today)
-  const todayRevenue  = todayOrders.reduce((s, o) => s + o.totalAmount, 0)
-  const pendingCount  = orders.filter((o) => o.orderStatus === 'Pending').length
-  const preparingCount = orders.filter((o) => o.orderStatus === 'Preparing' || o.orderStatus === 'Confirmed').length
+  const todayOrders    = orders.filter((o) => new Date(o.createdAt).toDateString() === today)
+  const todayRevenue   = todayOrders.reduce((s, o) => s + o.totalAmount, 0)
+  const pendingCount   = orders.filter((o) => o.orderStatus === 'Placed').length
+  const preparingCount = orders.filter((o) => ['Preparing', 'Out for Delivery'].includes(o.orderStatus)).length
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -126,12 +115,10 @@ const Orders = () => {
   return (
     <div className="space-y-6">
 
-      {/* ── Real-time New Order Alert Toast ── */}
-      <div
-        className={`fixed top-4 right-4 z-50 transition-all duration-500 ${
-          alertVisible ? 'translate-y-0 opacity-100' : '-translate-y-16 opacity-0 pointer-events-none'
-        }`}
-      >
+      {/* Real-time Toast Alert */}
+      <div className={`fixed top-4 right-4 z-50 transition-all duration-500 ${
+        alertVisible ? 'translate-y-0 opacity-100' : '-translate-y-16 opacity-0 pointer-events-none'
+      }`}>
         {newOrderAlert && (
           <div className="bg-white border-l-4 border-orange-500 shadow-2xl rounded-2xl px-5 py-4 flex items-center space-x-4 min-w-[300px]">
             <div className="bg-orange-100 p-2 rounded-xl">
@@ -141,17 +128,14 @@ const Orders = () => {
               <p className="font-bold text-gray-900 text-sm">🍛 New Order!</p>
               <p className="text-gray-600 text-xs">{newOrderAlert.customerName} · ₹{newOrderAlert.totalAmount}</p>
             </div>
-            <button
-              onClick={() => setAlertVisible(false)}
-              className="p-1 hover:bg-gray-100 rounded-lg"
-            >
+            <button onClick={() => setAlertVisible(false)} className="p-1 hover:bg-gray-100 rounded-lg">
               <X className="w-4 h-4 text-gray-400" />
             </button>
           </div>
         )}
       </div>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
@@ -166,13 +150,13 @@ const Orders = () => {
         </button>
       </div>
 
-      {/* ── Quick Stats Strip ── */}
+      {/* Quick Stats Strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Today's Orders", value: todayOrders.length, color: 'text-blue-600', bg: 'bg-blue-50' },
-          { label: "Today's Revenue", value: `₹${todayRevenue}`, color: 'text-green-600', bg: 'bg-green-50' },
-          { label: 'Pending',         value: pendingCount,       color: 'text-yellow-600', bg: 'bg-yellow-50' },
-          { label: 'In Progress',     value: preparingCount,     color: 'text-purple-600', bg: 'bg-purple-50' },
+          { label: "Today's Orders", value: todayOrders.length,  color: 'text-blue-600',   bg: 'bg-blue-50'   },
+          { label: "Today's Revenue", value: `₹${todayRevenue}`, color: 'text-green-600',  bg: 'bg-green-50'  },
+          { label: 'New (Placed)',    value: pendingCount,         color: 'text-yellow-600', bg: 'bg-yellow-50' },
+          { label: 'In Progress',     value: preparingCount,       color: 'text-purple-600', bg: 'bg-purple-50' },
         ].map((s) => (
           <div key={s.label} className={`${s.bg} rounded-2xl px-4 py-3`}>
             <p className={`text-2xl font-extrabold ${s.color}`}>{s.value}</p>
@@ -181,8 +165,8 @@ const Orders = () => {
         ))}
       </div>
 
-      {/* ── Filter Tabs ── */}
-      <div className="flex space-x-2 overflow-x-auto pb-1 scrollbar-hide">
+      {/* Filter Tabs */}
+      <div className="flex space-x-2 overflow-x-auto pb-1">
         {['All', ...STATUS_OPTIONS].map((status) => (
           <button
             key={status}
@@ -203,14 +187,12 @@ const Orders = () => {
         ))}
       </div>
 
-      {/* ── Error ── */}
+      {/* Error */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-5 py-3 rounded-xl text-sm">
-          {error}
-        </div>
+        <div className="bg-red-50 border border-red-200 text-red-700 px-5 py-3 rounded-xl text-sm">{error}</div>
       )}
 
-      {/* ── Empty State ── */}
+      {/* Empty State */}
       {filteredOrders.length === 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 text-center py-20">
           <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-4" />
@@ -221,71 +203,52 @@ const Orders = () => {
         </div>
       )}
 
-      {/* ── Orders Cards ── */}
+      {/* Orders Cards */}
       <div className="space-y-4">
         {filteredOrders.map((order) => {
-          const nextSteps = STATUS_FLOW[order.orderStatus] || []
+          const nextSteps  = STATUS_FLOW[order.orderStatus] || []
           const isTerminal = nextSteps.length === 0
 
           return (
-            <div
-              key={order._id}
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow"
-            >
+            <div key={order._id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow">
               <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
 
-                {/* ── Left: Order Info ── */}
+                {/* Left */}
                 <div className="flex-1 space-y-3">
-                  {/* Top row: ID + Status + Time */}
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm font-bold text-gray-400">
-                      #{order._id.slice(-6).toUpperCase()}
-                    </span>
+                    <span className="font-mono text-sm font-bold text-gray-400">#{order._id.slice(-6).toUpperCase()}</span>
                     <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${STATUS_COLORS[order.orderStatus] || 'bg-gray-100 text-gray-700'}`}>
                       {order.orderStatus}
                     </span>
                     <span className="text-xs text-gray-400 ml-auto">
-                      {new Date(order.createdAt).toLocaleString('en-IN', {
-                        day: '2-digit', month: 'short',
-                        hour: '2-digit', minute: '2-digit',
-                      })}
+                      {new Date(order.createdAt).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
                     </span>
                   </div>
-
-                  {/* Customer */}
                   <div>
                     <p className="font-bold text-gray-900 text-base">{order.customerName}</p>
                     <p className="text-sm text-gray-500">📞 {order.phone}</p>
                     <p className="text-sm text-gray-500 truncate">📍 {order.address}</p>
                   </div>
-
-                  {/* Items chips */}
                   <div className="flex flex-wrap gap-2">
                     {order.items.map((item, idx) => (
-                      <span
-                        key={idx}
-                        className="bg-orange-50 text-orange-700 text-xs font-medium px-3 py-1 rounded-full border border-orange-100"
-                      >
+                      <span key={idx} className="bg-orange-50 text-orange-700 text-xs font-medium px-3 py-1 rounded-full border border-orange-100">
                         {item.name} × {item.quantity}
                       </span>
                     ))}
                   </div>
-
-                  {/* Payment */}
                   <p className="text-xs text-gray-400">
                     {order.paymentMethod === 'COD' ? '💵 Cash on Delivery' : '📱 Online Payment'}
-                    {' '}&bull;{' '}
+                    {' • '}
                     <span className={order.paymentStatus === 'Paid' ? 'text-green-600 font-semibold' : 'text-yellow-600 font-semibold'}>
                       {order.paymentStatus}
                     </span>
                   </p>
                 </div>
 
-                {/* ── Right: Amount + Actions ── */}
+                {/* Right */}
                 <div className="flex flex-col items-end space-y-3 min-w-[180px]">
                   <p className="text-2xl font-extrabold text-gray-900">₹{order.totalAmount}</p>
 
-                  {/* View Detail Button */}
                   <button
                     onClick={() => setSelectedOrder(order)}
                     className="flex items-center space-x-1.5 text-sm font-semibold text-orange-500 hover:text-orange-600 bg-orange-50 hover:bg-orange-100 px-4 py-2 rounded-xl transition-all w-full justify-center"
@@ -294,7 +257,7 @@ const Orders = () => {
                     <span>View Details</span>
                   </button>
 
-                  {/* Status Action Buttons */}
+                  {/* Action Buttons — only valid next steps */}
                   {!isTerminal && (
                     <div className="flex flex-col w-full gap-2">
                       {nextSteps.map((next) => (
@@ -308,14 +271,10 @@ const Orders = () => {
                               : 'bg-orange-500 text-white hover:bg-orange-600'
                           }`}
                         >
-                          {updatingId === order._id ? (
-                            <span className="animate-pulse">Updating...</span>
-                          ) : (
-                            <>
-                              <ChevronDown className="w-4 h-4" />
-                              <span>Mark {next}</span>
-                            </>
-                          )}
+                          {updatingId === order._id
+                            ? <span className="animate-pulse">Updating...</span>
+                            : <><ChevronDown className="w-4 h-4" /><span>Mark {next}</span></>
+                          }
                         </button>
                       ))}
                     </div>
@@ -335,7 +294,7 @@ const Orders = () => {
         })}
       </div>
 
-      {/* ── Order Detail Modal ── */}
+      {/* Order Detail Modal */}
       {selectedOrder && (
         <OrderDetailModal
           order={selectedOrder}
@@ -344,7 +303,6 @@ const Orders = () => {
           updatingId={updatingId}
         />
       )}
-
     </div>
   )
 }

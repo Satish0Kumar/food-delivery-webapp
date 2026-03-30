@@ -1,231 +1,350 @@
-import { useState, useEffect } from 'react'
-import { RefreshCw, ShoppingCart } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { RefreshCw, ShoppingBag, Eye, Bell, X, ChevronDown } from 'lucide-react'
+import { io } from 'socket.io-client'
+import OrderDetailModal from '../components/OrderDetailModal'
 
-const STATUS_OPTIONS = [
-  'Pending',
-  'Preparing',
-  'Out for Delivery',
-  'Delivered',
-  'Cancelled'
-]
+const STATUS_OPTIONS = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Delivered', 'Cancelled']
+
+const STATUS_COLORS = {
+  Pending:           'bg-yellow-100 text-yellow-800 border-yellow-200',
+  Confirmed:         'bg-blue-100 text-blue-800 border-blue-200',
+  Preparing:         'bg-purple-100 text-purple-800 border-purple-200',
+  'Out for Delivery':'bg-orange-100 text-orange-800 border-orange-200',
+  Delivered:         'bg-green-100 text-green-800 border-green-200',
+  Cancelled:         'bg-red-100 text-red-800 border-red-200',
+}
+
+const STATUS_FLOW = {
+  Pending:           ['Confirmed', 'Cancelled'],
+  Confirmed:         ['Preparing', 'Cancelled'],
+  Preparing:         ['Out for Delivery', 'Cancelled'],
+  'Out for Delivery':['Delivered'],
+  Delivered:         [],
+  Cancelled:         [],
+}
 
 const Orders = () => {
-  const [orders, setOrders] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [updatingId, setUpdatingId] = useState(null)
+  const [orders, setOrders]           = useState([])
+  const [loading, setLoading]         = useState(true)
+  const [error, setError]             = useState('')
+  const [updatingId, setUpdatingId]   = useState(null)
   const [filterStatus, setFilterStatus] = useState('All')
+  const [selectedOrder, setSelectedOrder] = useState(null)
+  const [newOrderAlert, setNewOrderAlert] = useState(null)  // { orderId, customerName, totalAmount }
+  const [alertVisible, setAlertVisible]   = useState(false)
 
   const token = localStorage.getItem('token')
 
-  const fetchOrders = async () => {
+  // ── Fetch all orders ──
+  const fetchOrders = useCallback(async () => {
     setLoading(true)
+    setError('')
     try {
-      const response = await fetch('/api/orders', {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const res = await fetch('/api/orders', {
+        headers: { Authorization: `Bearer ${token}` },
       })
-      const data = await response.json()
+      const data = await res.json()
       if (data.success) setOrders(data.data)
-    } catch (err) {
-      setError('Failed to fetch orders')
+      else setError('Failed to fetch orders')
+    } catch {
+      setError('Network error. Could not load orders.')
     } finally {
       setLoading(false)
     }
-  }
+  }, [token])
 
+  useEffect(() => { fetchOrders() }, [fetchOrders])
+
+  // ── Socket.io — listen for new orders in real-time ──
   useEffect(() => {
-    fetchOrders()
-  }, [])
+    const socket = io('http://localhost:5000', { transports: ['websocket'] })
 
+    socket.on('new-order', (payload) => {
+      // Re-fetch full orders list to get populated item details
+      fetchOrders()
+      // Show toast alert
+      setNewOrderAlert(payload)
+      setAlertVisible(true)
+      // Play browser notification sound
+      try { new Audio('https://www.soundjay.com/buttons/beep-07a.mp3').play() } catch {}
+      // Auto-hide alert after 6 seconds
+      setTimeout(() => setAlertVisible(false), 6000)
+    })
+
+    return () => socket.disconnect()
+  }, [fetchOrders])
+
+  // ── Update order status ──
   const updateStatus = async (orderId, newStatus) => {
     setUpdatingId(orderId)
     try {
-      const response = await fetch(`/api/orders/${orderId}/status`, {
+      const res = await fetch(`/api/orders/${orderId}/status`, {
         method: 'PATCH',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ status: newStatus })
+        body: JSON.stringify({ status: newStatus }),
       })
-      const data = await response.json()
+      const data = await res.json()
       if (data.success) {
-        setOrders(prev =>
-          prev.map(order =>
-            order._id === orderId
-              ? { ...order, orderStatus: newStatus }
-              : order
-          )
+        setOrders((prev) =>
+          prev.map((o) => (o._id === orderId ? { ...o, orderStatus: newStatus } : o))
         )
+        // Update selected order modal too if open
+        if (selectedOrder?._id === orderId) {
+          setSelectedOrder((prev) => ({ ...prev, orderStatus: newStatus }))
+        }
       }
-    } catch (err) {
-      alert('Failed to update status')
+    } catch {
+      alert('Failed to update status. Try again.')
     } finally {
       setUpdatingId(null)
     }
   }
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Pending': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-      case 'Preparing': return 'bg-blue-100 text-blue-800 border-blue-200'
-      case 'Out for Delivery': return 'bg-orange-100 text-orange-800 border-orange-200'
-      case 'Delivered': return 'bg-green-100 text-green-800 border-green-200'
-      case 'Cancelled': return 'bg-red-100 text-red-800 border-red-200'
-      default: return 'bg-gray-100 text-gray-800 border-gray-200'
-    }
-  }
-
   const filteredOrders = filterStatus === 'All'
     ? orders
-    : orders.filter(o => o.orderStatus === filterStatus)
+    : orders.filter((o) => o.orderStatus === filterStatus)
+
+  // Today's stats
+  const today = new Date().toDateString()
+  const todayOrders   = orders.filter((o) => new Date(o.createdAt).toDateString() === today)
+  const todayRevenue  = todayOrders.reduce((s, o) => s + o.totalAmount, 0)
+  const pendingCount  = orders.filter((o) => o.orderStatus === 'Pending').length
+  const preparingCount = orders.filter((o) => o.orderStatus === 'Preparing' || o.orderStatus === 'Confirmed').length
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-gray-600">Loading orders...</p>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4" />
+        <p className="text-gray-500">Loading orders...</p>
       </div>
     </div>
   )
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
+
+      {/* ── Real-time New Order Alert Toast ── */}
+      <div
+        className={`fixed top-4 right-4 z-50 transition-all duration-500 ${
+          alertVisible ? 'translate-y-0 opacity-100' : '-translate-y-16 opacity-0 pointer-events-none'
+        }`}
+      >
+        {newOrderAlert && (
+          <div className="bg-white border-l-4 border-orange-500 shadow-2xl rounded-2xl px-5 py-4 flex items-center space-x-4 min-w-[300px]">
+            <div className="bg-orange-100 p-2 rounded-xl">
+              <Bell className="w-6 h-6 text-orange-500 animate-bounce" />
+            </div>
+            <div className="flex-1">
+              <p className="font-bold text-gray-900 text-sm">🍛 New Order!</p>
+              <p className="text-gray-600 text-xs">{newOrderAlert.customerName} · ₹{newOrderAlert.totalAmount}</p>
+            </div>
+            <button
+              onClick={() => setAlertVisible(false)}
+              className="p-1 hover:bg-gray-100 rounded-lg"
+            >
+              <X className="w-4 h-4 text-gray-400" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Header ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-gray-900">Orders</h2>
-          <p className="text-gray-600 mt-1">{orders.length} total orders</p>
+          <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
+          <p className="text-gray-500 text-sm mt-0.5">{orders.length} total · {todayOrders.length} today</p>
         </div>
         <button
           onClick={fetchOrders}
-          className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-all"
+          className="flex items-center space-x-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-xl transition-all font-semibold text-sm"
         >
           <RefreshCw className="w-4 h-4" />
           <span>Refresh</span>
         </button>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="flex space-x-2 flex-wrap gap-2">
-        {['All', ...STATUS_OPTIONS].map(status => (
+      {/* ── Quick Stats Strip ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "Today's Orders", value: todayOrders.length, color: 'text-blue-600', bg: 'bg-blue-50' },
+          { label: "Today's Revenue", value: `₹${todayRevenue}`, color: 'text-green-600', bg: 'bg-green-50' },
+          { label: 'Pending',         value: pendingCount,       color: 'text-yellow-600', bg: 'bg-yellow-50' },
+          { label: 'In Progress',     value: preparingCount,     color: 'text-purple-600', bg: 'bg-purple-50' },
+        ].map((s) => (
+          <div key={s.label} className={`${s.bg} rounded-2xl px-4 py-3`}>
+            <p className={`text-2xl font-extrabold ${s.color}`}>{s.value}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Filter Tabs ── */}
+      <div className="flex space-x-2 overflow-x-auto pb-1 scrollbar-hide">
+        {['All', ...STATUS_OPTIONS].map((status) => (
           <button
             key={status}
             onClick={() => setFilterStatus(status)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border ${
+            className={`shrink-0 px-4 py-2 rounded-xl text-sm font-semibold transition-all border ${
               filterStatus === status
-                ? 'bg-blue-600 text-white border-blue-600'
+                ? 'bg-orange-500 text-white border-orange-500'
                 : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
             }`}
           >
             {status}
             {status !== 'All' && (
-              <span className="ml-2 text-xs">
-                ({orders.filter(o => o.orderStatus === status).length})
+              <span className="ml-1.5 text-xs opacity-70">
+                ({orders.filter((o) => o.orderStatus === status).length})
               </span>
             )}
           </button>
         ))}
       </div>
 
-      {/* Error */}
+      {/* ── Error ── */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-xl">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-5 py-3 rounded-xl text-sm">
           {error}
         </div>
       )}
 
-      {/* Orders List */}
-      {filteredOrders.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-100 text-center py-16">
-          <ShoppingCart className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500 text-lg">No orders found</p>
+      {/* ── Empty State ── */}
+      {filteredOrders.length === 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 text-center py-20">
+          <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-4" />
+          <p className="text-gray-500 font-semibold">No orders found</p>
+          <p className="text-gray-400 text-sm mt-1">
+            {filterStatus === 'All' ? 'Orders will appear here once customers start ordering' : `No ${filterStatus} orders`}
+          </p>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {filteredOrders.map(order => (
+      )}
+
+      {/* ── Orders Cards ── */}
+      <div className="space-y-4">
+        {filteredOrders.map((order) => {
+          const nextSteps = STATUS_FLOW[order.orderStatus] || []
+          const isTerminal = nextSteps.length === 0
+
+          return (
             <div
               key={order._id}
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6"
+              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow"
             >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                {/* Order Info */}
-                <div className="flex-1 space-y-2">
-                  <div className="flex items-center space-x-3">
-                    <span className="font-mono text-sm font-bold text-gray-500">
+              <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+
+                {/* ── Left: Order Info ── */}
+                <div className="flex-1 space-y-3">
+                  {/* Top row: ID + Status + Time */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-sm font-bold text-gray-400">
                       #{order._id.slice(-6).toUpperCase()}
                     </span>
-                    <span className={`text-xs font-medium px-3 py-1 rounded-full border ${getStatusColor(order.orderStatus)}`}>
+                    <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${STATUS_COLORS[order.orderStatus] || 'bg-gray-100 text-gray-700'}`}>
                       {order.orderStatus}
+                    </span>
+                    <span className="text-xs text-gray-400 ml-auto">
+                      {new Date(order.createdAt).toLocaleString('en-IN', {
+                        day: '2-digit', month: 'short',
+                        hour: '2-digit', minute: '2-digit',
+                      })}
                     </span>
                   </div>
 
                   {/* Customer */}
                   <div>
-                    <p className="font-semibold text-gray-900 text-lg">
-                      {order.customerName}
-                    </p>
+                    <p className="font-bold text-gray-900 text-base">{order.customerName}</p>
                     <p className="text-sm text-gray-500">📞 {order.phone}</p>
-                    <p className="text-sm text-gray-500">📍 {order.address}</p>
+                    <p className="text-sm text-gray-500 truncate">📍 {order.address}</p>
                   </div>
 
-                  {/* Items */}
-                  <div className="flex flex-wrap gap-2 mt-2">
+                  {/* Items chips */}
+                  <div className="flex flex-wrap gap-2">
                     {order.items.map((item, idx) => (
                       <span
                         key={idx}
-                        className="bg-gray-100 text-gray-700 text-xs px-3 py-1 rounded-full"
+                        className="bg-orange-50 text-orange-700 text-xs font-medium px-3 py-1 rounded-full border border-orange-100"
                       >
                         {item.name} × {item.quantity}
                       </span>
                     ))}
                   </div>
+
+                  {/* Payment */}
+                  <p className="text-xs text-gray-400">
+                    {order.paymentMethod === 'COD' ? '💵 Cash on Delivery' : '📱 Online Payment'}
+                    {' '}&bull;{' '}
+                    <span className={order.paymentStatus === 'Paid' ? 'text-green-600 font-semibold' : 'text-yellow-600 font-semibold'}>
+                      {order.paymentStatus}
+                    </span>
+                  </p>
                 </div>
 
-                {/* Right Side */}
-                <div className="flex flex-col items-end space-y-3 min-w-[160px]">
-                  {/* Amount */}
-                  <div className="text-right">
-                    <p className="text-2xl font-bold text-gray-900">
-                      ₹{order.totalAmount}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {order.paymentMethod} • {new Date(order.createdAt).toLocaleString('en-IN', {
-                        day: '2-digit',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </p>
-                  </div>
+                {/* ── Right: Amount + Actions ── */}
+                <div className="flex flex-col items-end space-y-3 min-w-[180px]">
+                  <p className="text-2xl font-extrabold text-gray-900">₹{order.totalAmount}</p>
 
-                  {/* Status Dropdown */}
-                  <select
-                    value={order.orderStatus}
-                    onChange={(e) => updateStatus(order._id, e.target.value)}
-                    disabled={
-                      updatingId === order._id ||
-                      order.orderStatus === 'Delivered' ||
-                      order.orderStatus === 'Cancelled'
-                    }
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  {/* View Detail Button */}
+                  <button
+                    onClick={() => setSelectedOrder(order)}
+                    className="flex items-center space-x-1.5 text-sm font-semibold text-orange-500 hover:text-orange-600 bg-orange-50 hover:bg-orange-100 px-4 py-2 rounded-xl transition-all w-full justify-center"
                   >
-                    {STATUS_OPTIONS.map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
+                    <Eye className="w-4 h-4" />
+                    <span>View Details</span>
+                  </button>
 
-                  {updatingId === order._id && (
-                    <p className="text-xs text-blue-600 animate-pulse">
-                      Updating...
-                    </p>
+                  {/* Status Action Buttons */}
+                  {!isTerminal && (
+                    <div className="flex flex-col w-full gap-2">
+                      {nextSteps.map((next) => (
+                        <button
+                          key={next}
+                          onClick={() => updateStatus(order._id, next)}
+                          disabled={updatingId === order._id}
+                          className={`w-full text-sm font-bold py-2.5 px-4 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center space-x-1.5 ${
+                            next === 'Cancelled'
+                              ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200'
+                              : 'bg-orange-500 text-white hover:bg-orange-600'
+                          }`}
+                        >
+                          {updatingId === order._id ? (
+                            <span className="animate-pulse">Updating...</span>
+                          ) : (
+                            <>
+                              <ChevronDown className="w-4 h-4" />
+                              <span>Mark {next}</span>
+                            </>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {isTerminal && (
+                    <span className={`text-xs font-semibold px-3 py-2 rounded-xl w-full text-center ${
+                      order.orderStatus === 'Delivered' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                    }`}>
+                      {order.orderStatus === 'Delivered' ? '✅ Completed' : '❌ Cancelled'}
+                    </span>
                   )}
                 </div>
               </div>
             </div>
-          ))}
-        </div>
+          )
+        })}
+      </div>
+
+      {/* ── Order Detail Modal ── */}
+      {selectedOrder && (
+        <OrderDetailModal
+          order={selectedOrder}
+          onClose={() => setSelectedOrder(null)}
+          onStatusUpdate={updateStatus}
+          updatingId={updatingId}
+        />
       )}
+
     </div>
   )
 }

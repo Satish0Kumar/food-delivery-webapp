@@ -1,179 +1,197 @@
 import { useState, useEffect } from 'react'
-import { ShoppingCart, CheckCircle, Clock, TrendingUp } from 'lucide-react'
+import { ShoppingBag, CheckCircle, Clock, TrendingUp, ChefHat, Bike, AlertCircle } from 'lucide-react'
+import { io } from 'socket.io-client'
+
+const STATUS_COLORS = {
+  Pending:           'bg-yellow-100 text-yellow-800',
+  Confirmed:         'bg-blue-100 text-blue-800',
+  Preparing:         'bg-purple-100 text-purple-800',
+  'Out for Delivery':'bg-orange-100 text-orange-800',
+  Delivered:         'bg-green-100 text-green-800',
+  Cancelled:         'bg-red-100 text-red-800',
+}
 
 const Dashboard = () => {
-  const [orders, setOrders] = useState([])
+  const [orders, setOrders]   = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-
+  const [error, setError]     = useState('')
   const token = localStorage.getItem('token')
 
   const fetchOrders = async () => {
     try {
-      const response = await fetch('/api/orders', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      const res = await fetch('/api/orders', {
+        headers: { Authorization: `Bearer ${token}` },
       })
-      const data = await response.json()
-      if (data.success) {
-        setOrders(data.data)
-      }
-    } catch (err) {
-      setError('Failed to fetch orders')
+      const data = await res.json()
+      if (data.success) setOrders(data.data)
+      else setError('Failed to load orders')
+    } catch {
+      setError('Network error')
     } finally {
       setLoading(false)
     }
   }
 
+  useEffect(() => { fetchOrders() }, [])
+
+  // Real-time: re-fetch on new order event
   useEffect(() => {
-    fetchOrders()
+    const socket = io('http://localhost:5000', { transports: ['websocket'] })
+    socket.on('new-order', () => fetchOrders())
+    return () => socket.disconnect()
   }, [])
 
-  // Stats calculation
-  const totalOrders = orders.length
-  const pendingOrders = orders.filter(o => o.orderStatus === 'Pending').length
-  const completedOrders = orders.filter(o => o.orderStatus === 'Delivered').length
-  const totalRevenue = orders.reduce((sum, o) => sum + o.totalAmount, 0)
+  // ── Stats ──
+  const today = new Date().toDateString()
+  const todayOrders    = orders.filter((o) => new Date(o.createdAt).toDateString() === today)
+  const todayRevenue   = todayOrders.reduce((s, o) => s + o.totalAmount, 0)
+  const pendingOrders  = orders.filter((o) => o.orderStatus === 'Pending').length
+  const deliveredOrders = orders.filter((o) => o.orderStatus === 'Delivered').length
+  const totalRevenue   = orders.reduce((s, o) => s + o.totalAmount, 0)
+  const preparingOrders = orders.filter((o) => ['Confirmed','Preparing','Out for Delivery'].includes(o.orderStatus)).length
 
   const stats = [
     {
-      title: 'Total Orders',
-      value: totalOrders,
-      icon: ShoppingCart,
-      bg: 'bg-blue-500',
-      light: 'bg-blue-50',
-      text: 'text-blue-700'
+      title: "Today's Orders",
+      value: todayOrders.length,
+      sub: `${orders.length} total`,
+      icon: ShoppingBag,
+      iconColor: 'text-blue-600',
+      bg: 'bg-blue-50',
+      border: 'border-blue-100',
     },
     {
-      title: 'Pending',
+      title: 'Pending Now',
       value: pendingOrders,
+      sub: `${preparingOrders} in progress`,
       icon: Clock,
-      bg: 'bg-yellow-500',
-      light: 'bg-yellow-50',
-      text: 'text-yellow-700'
+      iconColor: 'text-yellow-600',
+      bg: 'bg-yellow-50',
+      border: 'border-yellow-100',
     },
     {
-      title: 'Delivered',
-      value: completedOrders,
+      title: 'Delivered Today',
+      value: deliveredOrders,
+      sub: 'completed orders',
       icon: CheckCircle,
-      bg: 'bg-green-500',
-      light: 'bg-green-50',
-      text: 'text-green-700'
+      iconColor: 'text-green-600',
+      bg: 'bg-green-50',
+      border: 'border-green-100',
     },
     {
-      title: 'Total Revenue',
-      value: `₹${totalRevenue}`,
+      title: "Today's Revenue",
+      value: `₹${todayRevenue}`,
+      sub: `₹${totalRevenue} all-time`,
       icon: TrendingUp,
-      bg: 'bg-purple-500',
-      light: 'bg-purple-50',
-      text: 'text-purple-700'
-    }
+      iconColor: 'text-orange-600',
+      bg: 'bg-orange-50',
+      border: 'border-orange-100',
+    },
   ]
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Pending': return 'bg-yellow-100 text-yellow-800'
-      case 'Preparing': return 'bg-blue-100 text-blue-800'
-      case 'Out for Delivery': return 'bg-orange-100 text-orange-800'
-      case 'Delivered': return 'bg-green-100 text-green-800'
-      case 'Cancelled': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
+  // Active orders = not Delivered, not Cancelled
+  const activeOrders = orders.filter(
+    (o) => !['Delivered', 'Cancelled'].includes(o.orderStatus)
+  ).slice(0, 8)
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p className="text-gray-600">Loading dashboard...</p>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4" />
+        <p className="text-gray-500">Loading dashboard...</p>
       </div>
-    </div>
-  )
-
-  if (error) return (
-    <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-xl">
-      {error}
     </div>
   )
 
   return (
     <div className="space-y-8">
-      {/* Page Title */}
-      <div>
-        <h2 className="text-3xl font-bold text-gray-900">Dashboard</h2>
-        <p className="text-gray-600 mt-1">Welcome back! Here's what's happening today.</p>
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
+          <p className="text-gray-500 text-sm mt-0.5">Welcome back! Here's today's overview.</p>
+        </div>
+        <div className="bg-orange-50 border border-orange-100 rounded-2xl px-4 py-2 text-right">
+          <p className="text-xs text-gray-400">Today</p>
+          <p className="font-bold text-orange-600 text-sm">
+            {new Date().toLocaleDateString('en-IN', { weekday:'short', day:'2-digit', month:'short' })}
+          </p>
+        </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, index) => (
-          <div key={index} className="bg-white rounded-2xl shadow-sm p-6 border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <div className={`${stat.light} p-3 rounded-xl`}>
-                <stat.icon className={`w-6 h-6 ${stat.text}`} />
+      {/* ── Stats Cards ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+        {stats.map((stat) => (
+          <div
+            key={stat.title}
+            className={`bg-white rounded-2xl border ${stat.border} shadow-sm p-5 hover:shadow-md transition-shadow`}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className={`${stat.bg} p-3 rounded-xl`}>
+                <stat.icon className={`w-6 h-6 ${stat.iconColor}`} />
               </div>
-              <span className={`text-xs font-medium px-2 py-1 rounded-full ${stat.light} ${stat.text}`}>
+              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${stat.bg} ${stat.iconColor}`}>
                 Live
               </span>
             </div>
-            <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
-            <p className="text-sm text-gray-600 mt-1">{stat.title}</p>
+            <p className="text-3xl font-extrabold text-gray-900">{stat.value}</p>
+            <p className="text-sm font-semibold text-gray-700 mt-1">{stat.title}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{stat.sub}</p>
           </div>
         ))}
       </div>
 
-      {/* Recent Orders */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
-        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-          <h3 className="text-lg font-semibold text-gray-900">Recent Orders</h3>
-          <span className="text-sm text-gray-500">{totalOrders} total</span>
+      {/* ── Active Orders ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-5 h-5 text-orange-500" />
+            <h3 className="font-bold text-gray-900">Active Orders</h3>
+          </div>
+          <span className="text-sm text-gray-400">{activeOrders.length} needing attention</span>
         </div>
 
-        {orders.length === 0 ? (
+        {activeOrders.length === 0 ? (
           <div className="text-center py-16">
-            <ShoppingCart className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500 text-lg">No orders yet</p>
-            <p className="text-gray-400 text-sm">Orders will appear here once customers start ordering</p>
+            <ChefHat className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+            <p className="text-gray-500 font-semibold">All caught up!</p>
+            <p className="text-gray-400 text-sm mt-1">No active orders right now</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order ID</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Items</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                  {['Order ID','Customer','Items','Amount','Status','Time'].map((h) => (
+                    <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
-                {orders.map((order) => (
-                  <tr key={order._id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 text-sm font-mono text-gray-500">
+              <tbody className="divide-y divide-gray-50">
+                {activeOrders.map((order) => (
+                  <tr key={order._id} className="hover:bg-orange-50/30 transition-colors">
+                    <td className="px-5 py-4 font-mono text-sm font-bold text-gray-400">
                       #{order._id.slice(-6).toUpperCase()}
                     </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm font-medium text-gray-900">{order.customerName}</p>
-                      <p className="text-xs text-gray-500">{order.phone}</p>
+                    <td className="px-5 py-4">
+                      <p className="text-sm font-semibold text-gray-900">{order.customerName}</p>
+                      <p className="text-xs text-gray-400">{order.phone}</p>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {order.items.map(i => `${i.name} x${i.quantity}`).join(', ')}
+                    <td className="px-5 py-4 text-sm text-gray-600 max-w-[180px] truncate">
+                      {order.items.map((i) => `${i.name} ×${i.quantity}`).join(', ')}
                     </td>
-                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">
+                    <td className="px-5 py-4 font-bold text-gray-900 text-sm">
                       ₹{order.totalAmount}
                     </td>
-                    <td className="px-6 py-4">
-                      <span className={`text-xs font-medium px-3 py-1 rounded-full ${getStatusColor(order.orderStatus)}`}>
+                    <td className="px-5 py-4">
+                      <span className={`text-xs font-semibold px-3 py-1 rounded-full ${STATUS_COLORS[order.orderStatus] || 'bg-gray-100 text-gray-700'}`}>
                         {order.orderStatus}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-xs text-gray-500">
+                    <td className="px-5 py-4 text-xs text-gray-400">
                       {new Date(order.createdAt).toLocaleTimeString('en-IN', {
-                        hour: '2-digit',
-                        minute: '2-digit'
+                        hour: '2-digit', minute: '2-digit',
                       })}
                     </td>
                   </tr>
@@ -183,6 +201,27 @@ const Dashboard = () => {
           </div>
         )}
       </div>
+
+      {/* ── Status Breakdown ── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {[
+          { status: 'Pending',           icon: Clock,       color: 'text-yellow-600', bg: 'bg-yellow-50' },
+          { status: 'Confirmed',         icon: CheckCircle, color: 'text-blue-600',   bg: 'bg-blue-50'   },
+          { status: 'Preparing',         icon: ChefHat,     color: 'text-purple-600', bg: 'bg-purple-50' },
+          { status: 'Out for Delivery',  icon: Bike,        color: 'text-orange-600', bg: 'bg-orange-50' },
+          { status: 'Delivered',         icon: CheckCircle, color: 'text-green-600',  bg: 'bg-green-50'  },
+          { status: 'Cancelled',         icon: AlertCircle, color: 'text-red-600',    bg: 'bg-red-50'    },
+        ].map(({ status, icon: Icon, color, bg }) => (
+          <div key={status} className={`${bg} rounded-2xl p-4 text-center`}>
+            <Icon className={`w-5 h-5 ${color} mx-auto mb-2`} />
+            <p className={`text-xl font-extrabold ${color}`}>
+              {orders.filter((o) => o.orderStatus === status).length}
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5 leading-tight">{status}</p>
+          </div>
+        ))}
+      </div>
+
     </div>
   )
 }

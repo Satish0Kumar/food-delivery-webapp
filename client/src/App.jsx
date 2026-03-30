@@ -1,36 +1,36 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { CartProvider } from './context/CartContext'
-import CartDrawer from './components/CartDrawer'
-import Login from './components/Login'
-import ProtectedRoute from './components/ProtectedRoute'
-import AdminLayout from './components/AdminLayout'
-import Dashboard from './pages/Dashboard'
-import Orders from './pages/Orders'
-import Menu from './pages/Menu'
-import Home from './pages/Home'
-import MenuPage from './pages/MenuPage'
-import CheckoutPage from './pages/CheckoutPage'
-import OrderSuccessPage from './pages/OrderSuccessPage'
+import CartDrawer        from './components/CartDrawer'
+import Login             from './components/Login'
+import ProtectedRoute    from './components/ProtectedRoute'
+import AdminLayout       from './components/AdminLayout'
+import Dashboard         from './pages/Dashboard'
+import Orders            from './pages/Orders'
+import Menu              from './pages/Menu'
+import Home              from './pages/Home'
+import MenuPage          from './pages/MenuPage'
+import CheckoutPage      from './pages/CheckoutPage'
+import OrderSuccessPage  from './pages/OrderSuccessPage'
+import PaymentStatusPage from './pages/PaymentStatusPage'   // ← Phase 5
 
 function App() {
   return (
     <CartProvider>
       <Router>
-        {/* CartDrawer lives outside Routes so it overlays any page */}
         <CartDrawer />
-
         <Routes>
 
-          {/* ── Customer Public Routes ── */}
-          <Route path="/" element={<Home />} />
-          <Route path="/menu" element={<MenuPage />} />
-          <Route path="/checkout" element={<CheckoutPage />} />
-          <Route path="/order-success" element={<OrderSuccessPage />} />
+          {/* Customer Public Routes */}
+          <Route path="/"               element={<Home />} />
+          <Route path="/menu"           element={<MenuPage />} />
+          <Route path="/checkout"       element={<CheckoutPage />} />
+          <Route path="/order-success"  element={<OrderSuccessPage />} />
+          <Route path="/payment-status" element={<PaymentStatusPage />} />  {/* ← Phase 5 */}
 
-          {/* ── Admin Auth ── */}
+          {/* Admin Auth */}
           <Route path="/login" element={<Login />} />
 
-          {/* ── Protected Admin Routes ── */}
+          {/* Protected Admin Routes */}
           <Route
             path="/admin"
             element={
@@ -41,11 +41,11 @@ function App() {
           >
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
-            <Route path="orders" element={<Orders />} />
-            <Route path="menu" element={<Menu />} />
+            <Route path="orders"    element={<Orders />} />
+            <Route path="menu"      element={<Menu />} />
           </Route>
 
-          {/* ── 404 ── */}
+          {/* 404 */}
           <Route
             path="*"
             element={

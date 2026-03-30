@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ShoppingBag, User, Phone, MapPin, CreditCard, Banknote, Loader2 } from 'lucide-react'
+import {
+  ArrowLeft, ShoppingBag, User, Phone, MapPin,
+  CreditCard, Banknote, Loader2,
+} from 'lucide-react'
 import { useCart } from '../context/CartContext'
 
 const CheckoutPage = () => {
@@ -9,15 +12,14 @@ const CheckoutPage = () => {
 
   const [form, setForm] = useState({
     customerName: '',
-    phone: '',
-    address: '',
+    phone:        '',
+    address:      '',
     paymentMethod: 'COD',
   })
-  const [errors, setErrors] = useState({})
-  const [placing, setPlacing] = useState(false)
+  const [errors, setErrors]       = useState({})
+  const [placing, setPlacing]     = useState(false)
   const [serverError, setServerError] = useState('')
 
-  // Redirect if cart is empty
   if (cartItems.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 text-center">
@@ -52,6 +54,46 @@ const CheckoutPage = () => {
     setServerError('')
   }
 
+  // ── COD Flow ──
+  const handleCOD = async (payload) => {
+    const res  = await fetch('/api/orders', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ...payload, paymentMethod: 'COD' }),
+    })
+    const data = await res.json()
+    if (data.success) {
+      clearCart()
+      navigate(
+        `/order-success?orderId=${data.data._id}&name=${encodeURIComponent(form.customerName.trim())}&total=${totalAmount}`
+      )
+    } else {
+      throw new Error(data.message || 'Order placement failed')
+    }
+  }
+
+  // ── Online / PhonePe Flow ──
+  const handleOnline = async (payload) => {
+    const res  = await fetch('/api/payment/initiate', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ...payload, totalAmount }),
+    })
+    const data = await res.json()
+    if (data.success && data.redirectUrl) {
+      // Save cart info to sessionStorage so PaymentStatus page can use it
+      sessionStorage.setItem('pendingOrder', JSON.stringify({
+        customerName: form.customerName.trim(),
+        totalAmount,
+        txnId: data.txnId,
+      }))
+      // Redirect to PhonePe hosted payment page
+      window.location.href = data.redirectUrl
+    } else {
+      throw new Error(data.message || 'Could not initiate payment')
+    }
+  }
+
   const handlePlaceOrder = async (e) => {
     e.preventDefault()
     const validationErrors = validate()
@@ -63,40 +105,26 @@ const CheckoutPage = () => {
     setPlacing(true)
     setServerError('')
 
+    const payload = {
+      customerName: form.customerName.trim(),
+      phone:        form.phone.trim(),
+      address:      form.address.trim(),
+      items: cartItems.map((i) => ({
+        itemId:   i._id,
+        name:     i.name,
+        quantity: i.quantity,
+      })),
+    }
+
     try {
-      const payload = {
-        customerName: form.customerName.trim(),
-        phone: form.phone.trim(),
-        address: form.address.trim(),
-        paymentMethod: form.paymentMethod,
-        items: cartItems.map((i) => ({
-          itemId: i._id,
-          name: i.name,      // send name too for better error messages
-          quantity: i.quantity,
-        })),
-      }
-
-      // Use native fetch to avoid any axios interceptor interference
-      const res = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      const data = await res.json()
-
-      if (data.success) {
-        const orderId = data.data._id
-        clearCart()
-        navigate(
-          `/order-success?orderId=${orderId}&name=${encodeURIComponent(form.customerName.trim())}&total=${totalAmount}`
-        )
+      if (form.paymentMethod === 'COD') {
+        await handleCOD(payload)
       } else {
-        setServerError(data.message || 'Something went wrong. Please try again.')
+        await handleOnline(payload)
       }
     } catch (err) {
-      console.error('Order placement error:', err)
-      setServerError('Network error. Please check your connection and try again.')
+      console.error('Order error:', err)
+      setServerError(err.message || 'Something went wrong. Please try again.')
     } finally {
       setPlacing(false)
     }
@@ -105,7 +133,7 @@ const CheckoutPage = () => {
   return (
     <div className="min-h-screen bg-gray-50 pb-10">
 
-      {/* ── Navbar ── */}
+      {/* Navbar */}
       <nav className="bg-white shadow-sm sticky top-0 z-30">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center space-x-3">
           <button
@@ -123,7 +151,7 @@ const CheckoutPage = () => {
 
       <div className="max-w-2xl mx-auto px-4 pt-6 space-y-6">
 
-        {/* ── Order Summary Card ── */}
+        {/* Order Summary */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="flex items-center space-x-2 px-5 py-4 border-b border-gray-50">
             <ShoppingBag className="w-5 h-5 text-orange-500" />
@@ -147,7 +175,6 @@ const CheckoutPage = () => {
               </div>
             ))}
           </div>
-          {/* Bill */}
           <div className="px-5 py-4 bg-gray-50 space-y-2">
             <div className="flex justify-between text-sm text-gray-500">
               <span>Subtotal</span><span>₹{totalAmount}</span>
@@ -163,7 +190,7 @@ const CheckoutPage = () => {
           </div>
         </div>
 
-        {/* ── Delivery Details Form ── */}
+        {/* Delivery Details Form */}
         <form onSubmit={handlePlaceOrder} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-50">
             <h2 className="font-bold text-gray-900">Delivery Details</h2>
@@ -177,17 +204,12 @@ const CheckoutPage = () => {
                 <User className="w-4 h-4 inline mr-1 text-gray-400" />Full Name *
               </label>
               <input
-                type="text"
-                name="customerName"
-                value={form.customerName}
-                onChange={handleChange}
-                placeholder="e.g. Raju Kumar"
+                type="text" name="customerName" value={form.customerName}
+                onChange={handleChange} placeholder="e.g. Raju Kumar"
                 className={`w-full border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all
                   ${errors.customerName ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}
               />
-              {errors.customerName && (
-                <p className="text-red-500 text-xs mt-1">{errors.customerName}</p>
-              )}
+              {errors.customerName && <p className="text-red-500 text-xs mt-1">{errors.customerName}</p>}
             </div>
 
             {/* Phone */}
@@ -198,19 +220,13 @@ const CheckoutPage = () => {
               <div className="flex">
                 <span className="inline-flex items-center px-3 border border-r-0 border-gray-200 rounded-l-xl bg-gray-50 text-sm text-gray-500">+91</span>
                 <input
-                  type="tel"
-                  name="phone"
-                  value={form.phone}
-                  onChange={handleChange}
-                  placeholder="9876543210"
-                  maxLength={10}
+                  type="tel" name="phone" value={form.phone}
+                  onChange={handleChange} placeholder="9876543210" maxLength={10}
                   className={`flex-1 border rounded-r-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all
                     ${errors.phone ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}
                 />
               </div>
-              {errors.phone && (
-                <p className="text-red-500 text-xs mt-1">{errors.phone}</p>
-              )}
+              {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
             </div>
 
             {/* Address */}
@@ -219,25 +235,21 @@ const CheckoutPage = () => {
                 <MapPin className="w-4 h-4 inline mr-1 text-gray-400" />Delivery Address *
               </label>
               <textarea
-                name="address"
-                value={form.address}
-                onChange={handleChange}
+                name="address" value={form.address} onChange={handleChange}
                 placeholder="House no, Street, Village / Area, Landmark..."
                 rows={3}
                 className={`w-full border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all resize-none
                   ${errors.address ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}
               />
-              {errors.address && (
-                <p className="text-red-500 text-xs mt-1">{errors.address}</p>
-              )}
+              {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address}</p>}
             </div>
 
             {/* Payment Method */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Payment Method *
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Payment Method *</label>
               <div className="grid grid-cols-2 gap-3">
+
+                {/* COD */}
                 <button
                   type="button"
                   onClick={() => setForm((p) => ({ ...p, paymentMethod: 'COD' }))}
@@ -253,6 +265,8 @@ const CheckoutPage = () => {
                     <p className="text-xs text-gray-400">Pay on delivery</p>
                   </div>
                 </button>
+
+                {/* Online */}
                 <button
                   type="button"
                   onClick={() => setForm((p) => ({ ...p, paymentMethod: 'ONLINE' }))}
@@ -269,6 +283,16 @@ const CheckoutPage = () => {
                   </div>
                 </button>
               </div>
+
+              {/* Online selected notice */}
+              {form.paymentMethod === 'ONLINE' && (
+                <div className="mt-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-start space-x-2">
+                  <span className="text-blue-500 text-base">🔒</span>
+                  <p className="text-xs text-blue-700">
+                    You'll be redirected to PhonePe's secure payment page to pay via UPI, card, or net banking.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Server Error */}
@@ -278,18 +302,21 @@ const CheckoutPage = () => {
               </div>
             )}
 
-            {/* Place Order Button */}
+            {/* Submit Button */}
             <button
               type="submit"
               disabled={placing}
               className="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white font-extrabold py-4 rounded-2xl transition-all active:scale-95 text-base flex items-center justify-center space-x-2"
             >
               {placing ? (
-                <><Loader2 className="w-5 h-5 animate-spin" /><span>Placing Order...</span></>
+                <><Loader2 className="w-5 h-5 animate-spin" /><span>Processing...</span></>
+              ) : form.paymentMethod === 'ONLINE' ? (
+                <span>🔒 Pay ₹{totalAmount} via PhonePe</span>
               ) : (
                 <span>🍛 Place Order · ₹{totalAmount}</span>
               )}
             </button>
+
           </div>
         </form>
       </div>

@@ -142,8 +142,63 @@ const updateOrderStatus = async (req, res) => {
   }
 };
 
+// @desc  Get order analytics stats (Admin)
+// @route GET /api/orders/stats
+// @access Private (Admin)
+const getOrderStats = async (req, res) => {
+  try {
+    const now = new Date()
+    const startOfToday = new Date(now)
+    startOfToday.setHours(0, 0, 0, 0)
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    const [totalOrders, todayOrders, monthOrders, revenueAgg, statusCounts, last7Days] =
+      await Promise.all([
+        Order.countDocuments(),
+        Order.countDocuments({ createdAt: { $gte: startOfToday } }),
+        Order.countDocuments({ createdAt: { $gte: startOfMonth } }),
+        Order.aggregate([
+          { $match: { paymentStatus: { $in: ['Paid', 'Pending'] }, orderStatus: { $ne: 'Cancelled' } } },
+          { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+        ]),
+        Order.aggregate([{ $group: { _id: '$orderStatus', count: { $sum: 1 } } }]),
+        Order.aggregate([
+          {
+            $match: {
+              createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+              orderStatus: { $ne: 'Cancelled' },
+            },
+          },
+          {
+            $group: {
+              _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+              revenue: { $sum: '$totalAmount' },
+              orders: { $sum: 1 },
+            },
+          },
+          { $sort: { _id: 1 } },
+        ]),
+      ])
+
+    res.json({
+      success: true,
+      data: {
+        totalOrders,
+        todayOrders,
+        monthOrders,
+        totalRevenue: revenueAgg[0]?.total || 0,
+        statusCounts,
+        last7Days,
+      },
+    })
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+}
+
 module.exports = {
   placeOrder,
   getOrders,
   updateOrderStatus,
+  getOrderStats,
 };

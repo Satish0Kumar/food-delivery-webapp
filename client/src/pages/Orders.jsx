@@ -28,6 +28,8 @@ const Orders = () => {
   const [error, setError]             = useState('')
   const [updatingId, setUpdatingId]   = useState(null)
   const [filterStatus, setFilterStatus] = useState('All')
+  const [search, setSearch]           = useState('')
+  const [filterPayment, setFilterPayment] = useState('All')
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [newOrderAlert, setNewOrderAlert] = useState(null)
   const [alertVisible, setAlertVisible]   = useState(false)
@@ -93,9 +95,31 @@ const Orders = () => {
     }
   }
 
-  const filteredOrders = filterStatus === 'All'
-    ? orders
-    : orders.filter((o) => o.orderStatus === filterStatus)
+  const filteredOrders = orders.filter((o) => {
+    const matchSearch =
+      o.customerName.toLowerCase().includes(search.toLowerCase()) ||
+      o.phone.includes(search) ||
+      o._id.includes(search)
+    const matchStatus  = filterStatus  === 'All' || o.orderStatus   === filterStatus
+    const matchPayment = filterPayment === 'All' || o.paymentMethod === filterPayment
+    return matchSearch && matchStatus && matchPayment
+  })
+
+  const exportCSV = () => {
+    const rows = [
+      ['Order ID', 'Customer', 'Phone', 'Amount', 'Payment', 'Status', 'Date'],
+      ...filteredOrders.map((o) => [
+        o._id, o.customerName, o.phone, o.totalAmount,
+        o.paymentMethod, o.orderStatus,
+        new Date(o.createdAt).toLocaleDateString(),
+      ]),
+    ]
+    const csv = rows.map((r) => r.join(',')).join('\n')
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+    a.download = `orders-${Date.now()}.csv`
+    a.click()
+  }
 
   const today = new Date().toDateString()
   const todayOrders    = orders.filter((o) => new Date(o.createdAt).toDateString() === today)
@@ -163,6 +187,32 @@ const Orders = () => {
             <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
           </div>
         ))}
+      </div>
+
+      {/* Search + Payment Filter + CSV Export */}
+      <div className="flex flex-wrap gap-3 items-center justify-between">
+        <div className="flex gap-2 flex-wrap">
+          <input
+            type="text"
+            placeholder="Search name, phone, ID..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="border border-gray-200 rounded-xl px-3 py-2 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-orange-400"
+          />
+          <select
+            value={filterPayment}
+            onChange={(e) => setFilterPayment(e.target.value)}
+            className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+          >
+            {['All', 'COD', 'ONLINE'].map((p) => <option key={p}>{p}</option>)}
+          </select>
+        </div>
+        <button
+          onClick={exportCSV}
+          className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition"
+        >
+          ⬇ Export CSV
+        </button>
       </div>
 
       {/* Filter Tabs */}

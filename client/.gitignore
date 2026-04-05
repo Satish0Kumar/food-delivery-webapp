@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+
+# In client/.gitignore — should already contain:
+.env
+.env.local

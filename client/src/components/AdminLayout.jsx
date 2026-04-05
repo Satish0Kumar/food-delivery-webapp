@@ -1,17 +1,18 @@
-
+import { useEffect } from 'react'
 import { Link, useLocation, Outlet } from 'react-router-dom'
-
-import { 
-  LayoutDashboard, 
-  ShoppingCart, 
-  Menu, 
-  LogOut 
-} from 'lucide-react'
+import { LayoutDashboard, ShoppingCart, Menu, LogOut } from 'lucide-react'
 import { logout } from '../utils/auth'
+import { requestFCMToken } from '../firebase'
 
 const AdminLayout = () => {
   const location = useLocation()
   const admin = JSON.parse(localStorage.getItem('admin') || '{}')
+
+  useEffect(() => {
+    requestFCMToken().then((token) => {
+      if (token) console.log('FCM Token (copy to OWNER_FCM_TOKEN):', token)
+    })
+  }, [])
 
   return (
     <div className="min-h-screen bg-gray-100">

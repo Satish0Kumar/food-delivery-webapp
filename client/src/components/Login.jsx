@@ -34,11 +34,9 @@ const Login = () => {
       const data = await response.json()
 
       if (data.success) {
-        // Save token
         localStorage.setItem('token', data.token)
         localStorage.setItem('admin', JSON.stringify(data.admin))
         setSuccess('Login successful! Redirecting...')
-        // In real app: navigate to dashboard
         setTimeout(() => {
           window.location.href = '/admin/dashboard'
         }, 1500)
@@ -53,28 +51,29 @@ const Login = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-400 to-orange-600">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-2xl p-8 space-y-8">
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            Food Delivery Admin
-          </h1>
-          <p className="text-gray-600">Sign in to your account</p>
+          <div className="w-16 h-16 bg-orange-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl">🍛</span>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">Admin Panel</h1>
+          <p className="text-gray-500 text-sm">Sign in to manage your restaurant</p>
         </div>
 
         {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg">
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
             {error}
           </div>
         )}
 
         {success && (
-          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg">
+          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">
             {success}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Email
@@ -84,8 +83,8 @@ const Login = () => {
               name="email"
               value={formData.email}
               onChange={handleChange}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-              placeholder="admin@foodshop.com"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-400 focus:border-transparent transition-all text-sm"
+              placeholder="Enter your email"
               required
             />
           </div>
@@ -99,8 +98,8 @@ const Login = () => {
               name="password"
               value={formData.password}
               onChange={handleChange}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-              placeholder="admin123"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-400 focus:border-transparent transition-all text-sm"
+              placeholder="Enter your password"
               required
             />
           </div>
@@ -108,15 +107,11 @@ const Login = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-3 px-6 rounded-xl font-semibold text-lg hover:from-blue-700 hover:to-purple-700 focus:ring-4 focus:ring-blue-300 disabled:opacity-50 transition-all shadow-xl"
+            className="w-full bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white py-3 px-6 rounded-xl font-bold text-sm disabled:opacity-50 transition-all shadow-lg min-h-[48px]"
           >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-
-        <div className="text-center text-sm text-gray-500">
-          Test Credentials: admin@foodshop.com / admin123
-        </div>
       </div>
     </div>
   )

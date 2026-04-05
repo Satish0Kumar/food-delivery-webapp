@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, ShoppingBag, Eye, Bell, X, ChevronDown } from 'lucide-react'
+import { RefreshCw, ShoppingBag, Eye, Bell, X, ChevronDown, Trash2, AlertTriangle } from 'lucide-react'
 import { io } from 'socket.io-client'
 import OrderDetailModal from '../components/OrderDetailModal'
 
@@ -15,7 +15,6 @@ const STATUS_COLORS = {
   Cancelled:         'bg-red-100 text-red-800 border-red-200',
 }
 
-// Phase 8: color badges for payment status
 const PAYMENT_STATUS_COLORS = {
   Paid:    'bg-green-100 text-green-700 border-green-200',
   Pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
@@ -30,6 +29,36 @@ const STATUS_FLOW = {
   Cancelled:         [],
 }
 
+// ── Confirm Dialog Component ──────────────────────────────────────────────────
+const ConfirmDialog = ({ message, onConfirm, onCancel, danger = false }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/40 backdrop-blur-sm">
+    <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
+      <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${
+        danger ? 'bg-red-50' : 'bg-yellow-50'
+      }`}>
+        <AlertTriangle className={`w-6 h-6 ${danger ? 'text-red-500' : 'text-yellow-500'}`} />
+      </div>
+      <p className="text-gray-800 font-semibold text-center text-sm mb-6 leading-relaxed">{message}</p>
+      <div className="flex gap-3">
+        <button
+          onClick={onCancel}
+          className="flex-1 border border-gray-200 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-50 transition-all min-h-[44px] text-sm"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onConfirm}
+          className={`flex-1 text-white font-bold py-3 rounded-xl transition-all min-h-[44px] text-sm ${
+            danger ? 'bg-red-500 hover:bg-red-600 active:bg-red-700' : 'bg-orange-500 hover:bg-orange-600'
+          }`}
+        >
+          Yes, Delete
+        </button>
+      </div>
+    </div>
+  </div>
+)
+
 const Orders = () => {
   const [orders, setOrders]               = useState([])
   const [loading, setLoading]             = useState(true)
@@ -37,11 +66,17 @@ const Orders = () => {
   const [updatingId, setUpdatingId]       = useState(null)
   const [filterStatus, setFilterStatus]   = useState('All')
   const [filterPayment, setFilterPayment] = useState('All')
-  const [filterPayStatus, setFilterPayStatus] = useState('All')  // Phase 8
+  const [filterPayStatus, setFilterPayStatus] = useState('All')
   const [search, setSearch]               = useState('')
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [newOrderAlert, setNewOrderAlert] = useState(null)
   const [alertVisible, setAlertVisible]   = useState(false)
+
+  // Delete state
+  const [deletingId, setDeletingId]           = useState(null)   // spinner per card
+  const [confirmSingle, setConfirmSingle]     = useState(null)   // order object to confirm delete
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false)
+  const [deletingAll, setDeletingAll]         = useState(false)
 
   const token = localStorage.getItem('token')
 
@@ -79,7 +114,7 @@ const Orders = () => {
   const updateStatus = async (orderId, newStatus) => {
     setUpdatingId(orderId)
     try {
-      const res = await fetch(`/api/orders/${orderId}/status`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/orders/${orderId}/status`, {
         method: 'PATCH',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -103,7 +138,52 @@ const Orders = () => {
     }
   }
 
-  // Phase 8: added filterPayStatus to filter logic
+  // ── Delete single order ───────────────────────────────────────────────────
+  const handleDeleteOrder = async (orderId) => {
+    setConfirmSingle(null)
+    setDeletingId(orderId)
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/orders/${orderId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (data.success) {
+        setOrders((prev) => prev.filter((o) => o._id !== orderId))
+        if (selectedOrder?._id === orderId) setSelectedOrder(null)
+      } else {
+        alert('Failed to delete order.')
+      }
+    } catch {
+      alert('Network error. Could not delete order.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  // ── Delete all orders ─────────────────────────────────────────────────────
+  const handleDeleteAll = async () => {
+    setConfirmDeleteAll(false)
+    setDeletingAll(true)
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/orders/all`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (data.success) {
+        setOrders([])
+        setSelectedOrder(null)
+      } else {
+        alert('Failed to clear orders.')
+      }
+    } catch {
+      alert('Network error. Could not clear orders.')
+    } finally {
+      setDeletingAll(false)
+    }
+  }
+
   const filteredOrders = orders.filter((o) => {
     const matchSearch =
       o.customerName.toLowerCase().includes(search.toLowerCase()) ||
@@ -133,7 +213,7 @@ const Orders = () => {
 
   const today          = new Date().toDateString()
   const todayOrders    = orders.filter((o) => new Date(o.createdAt).toDateString() === today)
-  const todayRevenue   = todayOrders.filter((o) => o.paymentStatus === 'Paid').reduce((s, o) => s + o.totalAmount, 0)  // Phase 8: Paid only
+  const todayRevenue   = todayOrders.filter((o) => o.paymentStatus === 'Paid').reduce((s, o) => s + o.totalAmount, 0)
   const pendingCount   = orders.filter((o) => o.orderStatus === 'Placed').length
   const preparingCount = orders.filter((o) => ['Preparing', 'Out for Delivery'].includes(o.orderStatus)).length
 
@@ -148,6 +228,23 @@ const Orders = () => {
 
   return (
     <div className="space-y-6">
+
+      {/* Confirm dialogs */}
+      {confirmSingle && (
+        <ConfirmDialog
+          message={`Delete order #${confirmSingle._id.slice(-6).toUpperCase()} from ${confirmSingle.customerName}? This cannot be undone.`}
+          onConfirm={() => handleDeleteOrder(confirmSingle._id)}
+          onCancel={() => setConfirmSingle(null)}
+        />
+      )}
+      {confirmDeleteAll && (
+        <ConfirmDialog
+          danger
+          message={`Delete ALL ${orders.length} orders permanently? This cannot be undone.`}
+          onConfirm={handleDeleteAll}
+          onCancel={() => setConfirmDeleteAll(false)}
+        />
+      )}
 
       {/* Real-time Toast Alert */}
       <div className={`fixed top-4 right-4 z-50 transition-all duration-500 ${
@@ -178,13 +275,25 @@ const Orders = () => {
           <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
           <p className="text-gray-500 text-sm mt-0.5">{orders.length} total · {todayOrders.length} today</p>
         </div>
-        <button
-          onClick={fetchOrders}
-          className="flex items-center space-x-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-xl transition-all font-semibold text-sm min-h-[44px]"
-        >
-          <RefreshCw className="w-4 h-4" />
-          <span>Refresh</span>
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={fetchOrders}
+            className="flex items-center space-x-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-xl transition-all font-semibold text-sm min-h-[44px]"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Refresh</span>
+          </button>
+          {orders.length > 0 && (
+            <button
+              onClick={() => setConfirmDeleteAll(true)}
+              disabled={deletingAll}
+              className="flex items-center space-x-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2.5 rounded-xl transition-all font-semibold text-sm min-h-[44px] disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>{deletingAll ? 'Clearing...' : 'Clear All Orders'}</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Quick Stats Strip */}
@@ -212,7 +321,6 @@ const Orders = () => {
             onChange={(e) => setSearch(e.target.value)}
             className="border border-gray-200 rounded-xl px-3 py-2 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-orange-400"
           />
-          {/* Payment Method filter */}
           <select
             value={filterPayment}
             onChange={(e) => setFilterPayment(e.target.value)}
@@ -220,7 +328,6 @@ const Orders = () => {
           >
             {['All', 'COD', 'ONLINE'].map((p) => <option key={p}>{p}</option>)}
           </select>
-          {/* Phase 8: Payment Status filter */}
           <select
             value={filterPayStatus}
             onChange={(e) => setFilterPayStatus(e.target.value)}
@@ -292,7 +399,6 @@ const Orders = () => {
                     <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${STATUS_COLORS[order.orderStatus] || 'bg-gray-100 text-gray-700'}`}>
                       {order.orderStatus}
                     </span>
-                    {/* Phase 8: Payment status badge with color */}
                     <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${
                       PAYMENT_STATUS_COLORS[order.paymentStatus] || 'bg-gray-100 text-gray-600 border-gray-200'
                     }`}>
@@ -358,6 +464,16 @@ const Orders = () => {
                       {order.orderStatus === 'Delivered' ? '✅ Completed' : '❌ Cancelled'}
                     </span>
                   )}
+
+                  {/* Delete single order */}
+                  <button
+                    onClick={() => setConfirmSingle(order)}
+                    disabled={deletingId === order._id}
+                    className="flex items-center space-x-1.5 text-sm font-semibold text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 border border-red-100 px-4 py-2 rounded-xl transition-all w-full justify-center min-h-[44px] disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>{deletingId === order._id ? 'Deleting...' : 'Clear Order'}</span>
+                  </button>
                 </div>
               </div>
             </div>

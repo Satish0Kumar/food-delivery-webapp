@@ -107,6 +107,35 @@ const updateOrderStatus = async (req, res) => {
   }
 };
 
+// @desc    Delete a single order (Admin)
+// @route   DELETE /api/orders/:id
+// @access  Private (Admin)
+const deleteOrder = async (req, res) => {
+  try {
+    const order = await Order.findByIdAndDelete(req.params.id);
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    res.status(200).json({ success: true, message: "Order deleted" });
+  } catch (error) {
+    console.error("Delete order error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// @desc    Delete all orders (Admin)
+// @route   DELETE /api/orders
+// @access  Private (Admin)
+const deleteAllOrders = async (req, res) => {
+  try {
+    const result = await Order.deleteMany({});
+    res.status(200).json({ success: true, message: `${result.deletedCount} orders deleted` });
+  } catch (error) {
+    console.error("Delete all orders error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
 // @desc  Get order analytics stats (Admin)
 // @route GET /api/orders/stats
 // @access Private (Admin)
@@ -122,24 +151,21 @@ const getOrderStats = async (req, res) => {
         Order.countDocuments(),
         Order.countDocuments({ createdAt: { $gte: startOfToday } }),
         Order.countDocuments({ createdAt: { $gte: startOfMonth } }),
-        // Phase 8 fix: only count PAID orders for total revenue (not Pending)
         Order.aggregate([
           { $match: { paymentStatus: 'Paid', orderStatus: { $ne: 'Cancelled' } } },
           { $group: { _id: null, total: { $sum: '$totalAmount' } } },
         ]),
-        // Phase 8: today's confirmed revenue (Paid only)
         Order.aggregate([
           { $match: { paymentStatus: 'Paid', orderStatus: { $ne: 'Cancelled' }, createdAt: { $gte: startOfToday } } },
           { $group: { _id: null, total: { $sum: '$totalAmount' } } },
         ]),
         Order.aggregate([{ $group: { _id: '$orderStatus', count: { $sum: 1 } } }]),
-        // Phase 8: payment status breakdown
         Order.aggregate([{ $group: { _id: '$paymentStatus', count: { $sum: 1 } } }]),
         Order.aggregate([
           {
             $match: {
               createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-              paymentStatus: 'Paid',   // Phase 8: chart only shows confirmed revenue
+              paymentStatus: 'Paid',
               orderStatus: { $ne: 'Cancelled' },
             },
           },
@@ -163,7 +189,7 @@ const getOrderStats = async (req, res) => {
         totalRevenue:  revenueAgg[0]?.total || 0,
         todayRevenue:  todayRevenueAgg[0]?.total || 0,
         statusCounts,
-        paymentStatusCounts,   // Phase 8: Paid/Pending/Failed breakdown
+        paymentStatusCounts,
         last7Days,
       },
     })
@@ -176,5 +202,7 @@ module.exports = {
   placeOrder,
   getOrders,
   updateOrderStatus,
+  deleteOrder,
+  deleteAllOrders,
   getOrderStats,
 };

@@ -11,13 +11,13 @@ const CheckoutPage = () => {
   const navigate = useNavigate()
 
   const [form, setForm] = useState({
-    customerName: '',
-    phone:        '',
-    address:      '',
+    customerName:  '',
+    phone:         '',
+    address:       '',
     paymentMethod: 'COD',
   })
-  const [errors, setErrors]       = useState({})
-  const [placing, setPlacing]     = useState(false)
+  const [errors, setErrors]           = useState({})
+  const [placing, setPlacing]         = useState(false)
   const [serverError, setServerError] = useState('')
 
   if (cartItems.length === 0) {
@@ -26,10 +26,7 @@ const CheckoutPage = () => {
         <div className="text-7xl mb-4">🛒</div>
         <p className="text-gray-700 font-bold text-xl mb-2">Your cart is empty</p>
         <p className="text-gray-400 text-sm mb-6">Add items before checking out</p>
-        <button
-          onClick={() => navigate('/menu')}
-          className="bg-orange-500 text-white px-8 py-3 rounded-2xl font-bold hover:bg-orange-600 transition-all"
-        >
+        <button onClick={() => navigate('/menu')} className="bg-orange-500 text-white px-8 py-3 rounded-2xl font-bold hover:bg-orange-600 transition-all">
           Go to Menu
         </button>
       </div>
@@ -64,9 +61,7 @@ const CheckoutPage = () => {
     const data = await res.json()
     if (data.success) {
       clearCart()
-      navigate(
-        `/order-success?orderId=${data.data._id}&name=${encodeURIComponent(form.customerName.trim())}&total=${totalAmount}`
-      )
+      navigate(`/order-success?orderId=${data.data._id}&name=${encodeURIComponent(form.customerName.trim())}&total=${totalAmount}`)
     } else {
       throw new Error(data.message || 'Order placement failed')
     }
@@ -81,13 +76,14 @@ const CheckoutPage = () => {
     })
     const data = await res.json()
     if (data.success && data.redirectUrl) {
-      // Save cart info to sessionStorage so PaymentStatus page can use it
+      // Save info for PaymentStatusPage
       sessionStorage.setItem('pendingOrder', JSON.stringify({
         customerName: form.customerName.trim(),
         totalAmount,
-        txnId: data.txnId,
+        txnId:   data.txnId,
+        orderId: data.orderId,
       }))
-      // Redirect to PhonePe hosted payment page
+      clearCart()  // clear cart before redirect — order is already saved in DB
       window.location.href = data.redirectUrl
     } else {
       throw new Error(data.message || 'Could not initiate payment')
@@ -97,10 +93,7 @@ const CheckoutPage = () => {
   const handlePlaceOrder = async (e) => {
     e.preventDefault()
     const validationErrors = validate()
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors)
-      return
-    }
+    if (Object.keys(validationErrors).length > 0) { setErrors(validationErrors); return }
 
     setPlacing(true)
     setServerError('')
@@ -109,11 +102,7 @@ const CheckoutPage = () => {
       customerName: form.customerName.trim(),
       phone:        form.phone.trim(),
       address:      form.address.trim(),
-      items: cartItems.map((i) => ({
-        itemId:   i._id,
-        name:     i.name,
-        quantity: i.quantity,
-      })),
+      items: cartItems.map((i) => ({ itemId: i._id, name: i.name, quantity: i.quantity })),
     }
 
     try {
@@ -123,7 +112,6 @@ const CheckoutPage = () => {
         await handleOnline(payload)
       }
     } catch (err) {
-      console.error('Order error:', err)
       setServerError(err.message || 'Something went wrong. Please try again.')
     } finally {
       setPlacing(false)
@@ -136,10 +124,7 @@ const CheckoutPage = () => {
       {/* Navbar */}
       <nav className="bg-white shadow-sm sticky top-0 z-30">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center space-x-3">
-          <button
-            onClick={() => navigate('/menu')}
-            className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-          >
+          <button onClick={() => navigate('/menu')} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
           <div>
@@ -206,8 +191,7 @@ const CheckoutPage = () => {
               <input
                 type="text" name="customerName" value={form.customerName}
                 onChange={handleChange} placeholder="e.g. Raju Kumar"
-                className={`w-full border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all
-                  ${errors.customerName ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}
+                className={`w-full border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all ${errors.customerName ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}
               />
               {errors.customerName && <p className="text-red-500 text-xs mt-1">{errors.customerName}</p>}
             </div>
@@ -222,8 +206,7 @@ const CheckoutPage = () => {
                 <input
                   type="tel" name="phone" value={form.phone}
                   onChange={handleChange} placeholder="9876543210" maxLength={10}
-                  className={`flex-1 border rounded-r-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all
-                    ${errors.phone ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}
+                  className={`flex-1 border rounded-r-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all ${errors.phone ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}
                 />
               </div>
               {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
@@ -238,8 +221,7 @@ const CheckoutPage = () => {
                 name="address" value={form.address} onChange={handleChange}
                 placeholder="House no, Street, Village / Area, Landmark..."
                 rows={3}
-                className={`w-full border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all resize-none
-                  ${errors.address ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}
+                className={`w-full border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all resize-none ${errors.address ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}
               />
               {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address}</p>}
             </div>
@@ -248,16 +230,8 @@ const CheckoutPage = () => {
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">Payment Method *</label>
               <div className="grid grid-cols-2 gap-3">
-
-                {/* COD */}
-                <button
-                  type="button"
-                  onClick={() => setForm((p) => ({ ...p, paymentMethod: 'COD' }))}
-                  className={`flex items-center space-x-3 border-2 rounded-xl px-4 py-3 transition-all ${
-                    form.paymentMethod === 'COD'
-                      ? 'border-orange-500 bg-orange-50'
-                      : 'border-gray-200 hover:border-orange-200'
-                  }`}
+                <button type="button" onClick={() => setForm((p) => ({ ...p, paymentMethod: 'COD' }))}
+                  className={`flex items-center space-x-3 border-2 rounded-xl px-4 py-3 transition-all ${ form.paymentMethod === 'COD' ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:border-orange-200' }`}
                 >
                   <Banknote className={`w-5 h-5 ${form.paymentMethod === 'COD' ? 'text-orange-500' : 'text-gray-400'}`} />
                   <div className="text-left">
@@ -266,15 +240,8 @@ const CheckoutPage = () => {
                   </div>
                 </button>
 
-                {/* Online */}
-                <button
-                  type="button"
-                  onClick={() => setForm((p) => ({ ...p, paymentMethod: 'ONLINE' }))}
-                  className={`flex items-center space-x-3 border-2 rounded-xl px-4 py-3 transition-all ${
-                    form.paymentMethod === 'ONLINE'
-                      ? 'border-orange-500 bg-orange-50'
-                      : 'border-gray-200 hover:border-orange-200'
-                  }`}
+                <button type="button" onClick={() => setForm((p) => ({ ...p, paymentMethod: 'ONLINE' }))}
+                  className={`flex items-center space-x-3 border-2 rounded-xl px-4 py-3 transition-all ${ form.paymentMethod === 'ONLINE' ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:border-orange-200' }`}
                 >
                   <CreditCard className={`w-5 h-5 ${form.paymentMethod === 'ONLINE' ? 'text-orange-500' : 'text-gray-400'}`} />
                   <div className="text-left">
@@ -284,28 +251,24 @@ const CheckoutPage = () => {
                 </button>
               </div>
 
-              {/* Online selected notice */}
               {form.paymentMethod === 'ONLINE' && (
                 <div className="mt-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-start space-x-2">
                   <span className="text-blue-500 text-base">🔒</span>
                   <p className="text-xs text-blue-700">
-                    You'll be redirected to PhonePe's secure payment page to pay via UPI, card, or net banking.
+                    You'll be redirected to PhonePe's secure payment page. UPI, card, or net banking.
                   </p>
                 </div>
               )}
             </div>
 
-            {/* Server Error */}
             {serverError && (
               <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
                 ⚠️ {serverError}
               </div>
             )}
 
-            {/* Submit Button */}
             <button
-              type="submit"
-              disabled={placing}
+              type="submit" disabled={placing}
               className="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white font-extrabold py-4 rounded-2xl transition-all active:scale-95 text-base flex items-center justify-center space-x-2"
             >
               {placing ? (

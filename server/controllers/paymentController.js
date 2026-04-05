@@ -1,15 +1,16 @@
 const crypto = require('crypto')
 const axios  = require('axios')
 const Order  = require('../models/Order')
-const { sendOrderEmail }        = require('../utils/sendEmail')
-const { sendPushNotification }  = require('../utils/sendNotification')
+const Item   = require('../models/Item')
+const { sendOrderEmail }       = require('../utils/sendEmail')
+const { sendPushNotification } = require('../utils/sendNotification')
 
 const MERCHANT_ID  = process.env.PHONEPE_MERCHANT_ID
 const SALT_KEY     = process.env.PHONEPE_SALT_KEY
 const SALT_INDEX   = process.env.PHONEPE_SALT_INDEX || '1'
 const BASE_URL     = process.env.PHONEPE_BASE_URL
-const CALLBACK_URL = process.env.PHONEPE_CALLBACK_URL   // ngrok / Render URL
-const CLIENT_URL   = process.env.CLIENT_URL             // http://localhost:5173
+const CALLBACK_URL = process.env.PHONEPE_CALLBACK_URL
+const CLIENT_URL   = process.env.CLIENT_URL
 
 // ─────────────────────────────────────────────
 // @route  POST /api/payment/initiate
@@ -23,30 +24,58 @@ const initiatePayment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'All fields are required' })
     }
 
-    // Unique merchant transaction ID
+    // ── Step 1: Verify items & calculate total from DB (same as COD) ──
+    const orderItems = []
+    let calculatedTotal = 0
+
+    for (const item of items) {
+      const dbItem = await Item.findById(item.itemId)
+      if (!dbItem || !dbItem.isAvailable) {
+        return res.status(400).json({
+          success: false,
+          message: `${dbItem?.name || 'An item'} is not available`,
+        })
+      }
+      orderItems.push({
+        itemId:   item.itemId,
+        name:     dbItem.name,
+        price:    dbItem.price,
+        quantity: item.quantity,
+      })
+      calculatedTotal += dbItem.price * item.quantity
+    }
+
+    // ── Step 2: Save order to DB immediately with paymentStatus: Pending ──
+    // This ensures it exists in DB regardless of callback reliability
     const merchantTransactionId = `MT${Date.now()}_${Math.random().toString(36).slice(2, 7).toUpperCase()}`
 
-    // Store pending order details in payload as base64 so callback can recreate the order
-    const orderMeta = Buffer.from(
-      JSON.stringify({ customerName, phone, address, items, totalAmount })
-    ).toString('base64')
+    const order = await Order.create({
+      customerName,
+      phone,
+      address,
+      items:          orderItems,
+      totalAmount:    calculatedTotal,
+      paymentMethod:  'ONLINE',
+      paymentStatus:  'Pending',   // will be updated to Paid on success
+      orderStatus:    'Placed',
+      transactionId:  merchantTransactionId,
+    })
 
+    // ── Step 3: Build PhonePe payload ──
     const payload = {
       merchantId:            MERCHANT_ID,
       merchantTransactionId,
       merchantUserId:        `USR_${phone}`,
-      amount:                totalAmount * 100,    // PhonePe expects paise
+      amount:                calculatedTotal * 100,   // paise
       redirectUrl:           `${CLIENT_URL}/payment-status?txnId=${merchantTransactionId}`,
       redirectMode:          'REDIRECT',
       callbackUrl:           `${CALLBACK_URL}/api/payment/callback`,
       mobileNumber:          phone,
       paymentInstrument:     { type: 'PAY_PAGE' },
-      // carry order details through the transaction (custom field)
-      merchantOrderId:       orderMeta,
     }
 
     const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64')
-    const xVerify       = crypto
+    const xVerify = crypto
       .createHash('sha256')
       .update(base64Payload + '/pg/v1/pay' + SALT_KEY)
       .digest('hex') + '###' + SALT_INDEX
@@ -73,9 +102,12 @@ const initiatePayment = async (req, res) => {
         success:     true,
         redirectUrl: phonePeData.data.instrumentResponse.redirectInfo.url,
         txnId:       merchantTransactionId,
+        orderId:     order._id,
       })
     }
 
+    // PhonePe rejected — delete the pending order
+    await Order.findByIdAndDelete(order._id)
     return res.status(400).json({
       success: false,
       message: phonePeData.message || 'Payment initiation failed',
@@ -88,7 +120,7 @@ const initiatePayment = async (req, res) => {
 
 // ─────────────────────────────────────────────
 // @route  POST /api/payment/callback
-// @access PhonePe server-to-server (public)
+// @access PhonePe server-to-server
 // ─────────────────────────────────────────────
 const paymentCallback = async (req, res) => {
   try {
@@ -98,7 +130,7 @@ const paymentCallback = async (req, res) => {
       return res.status(400).json({ success: false, message: 'No response payload' })
     }
 
-    // ── Step 1: Verify checksum ──
+    // ── Verify checksum ──
     const xVerifyHeader = req.headers['x-verify']
     const [receivedHash] = (xVerifyHeader || '').split('###')
 
@@ -112,73 +144,47 @@ const paymentCallback = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Checksum mismatch' })
     }
 
-    // ── Step 2: Decode response ──
-    const decoded     = JSON.parse(Buffer.from(encodedResponse, 'base64').toString())
-    const txnData     = decoded.data
+    // ── Decode response ──
+    const decoded        = JSON.parse(Buffer.from(encodedResponse, 'base64').toString())
+    const txnData        = decoded.data
     const paymentSuccess = decoded.code === 'PAYMENT_SUCCESS'
+    const merchantTxnId  = txnData?.merchantTransactionId
 
-    const merchantTransactionId = txnData?.merchantTransactionId
-    const merchantOrderId       = txnData?.merchantOrderId   // base64 order meta
+    if (paymentSuccess && merchantTxnId) {
+      // Find the order we saved at initiation by transactionId
+      const order = await Order.findOneAndUpdate(
+        { transactionId: merchantTxnId, paymentStatus: 'Pending' },
+        { paymentStatus: 'Paid' },
+        { new: true }
+      )
 
-    if (paymentSuccess && merchantOrderId) {
-      // ── Step 3: Recreate order from meta ──
-      let orderMeta
-      try {
-        orderMeta = JSON.parse(Buffer.from(merchantOrderId, 'base64').toString())
-      } catch {
-        return res.status(400).json({ success: false, message: 'Invalid order meta' })
+      if (order) {
+        const io = req.app.get('io')
+        if (io) {
+          io.emit('new-order', {
+            orderId:      order._id,
+            customerName: order.customerName,
+            totalAmount:  order.totalAmount,
+            phone:        order.phone,
+          })
+        }
+        sendOrderEmail(order)
+        sendPushNotification(order)
+        console.log('✅ PhonePe callback: order marked Paid —', order._id)
+      } else {
+        console.warn('⚠️ PhonePe callback: no pending order found for txn', merchantTxnId)
       }
-
-      const { customerName, phone, address, items, totalAmount } = orderMeta
-
-      const Item = require('../models/Item')
-      const orderItems = []
-      let calculatedTotal = 0
-
-      for (const item of items) {
-        const dbItem = await Item.findById(item.itemId)
-        if (!dbItem || !dbItem.isAvailable) continue
-        orderItems.push({
-          itemId:   item.itemId,
-          name:     dbItem.name,
-          price:    dbItem.price,
-          quantity: item.quantity,
-        })
-        calculatedTotal += dbItem.price * item.quantity
-      }
-
-      const order = await Order.create({
-        customerName,
-        phone,
-        address,
-        items:          orderItems,
-        totalAmount:    calculatedTotal,
-        paymentMethod:  'ONLINE',
-        paymentStatus:  'Paid',
-        transactionId:  merchantTransactionId,
-      })
-
-      // Notify admin via socket.io
-      // (server.js sets app's io instance; callback route uses req.app)
-      const io = req.app.get('io')
-      if (io) {
-        io.emit('new-order', {
-          orderId:      order._id,
-          customerName,
-          totalAmount:  calculatedTotal,
-          phone,
-        })
-      }
-
-      sendOrderEmail(order)
-      sendPushNotification(order)
-
-      console.log('✅ PhonePe payment success — Order saved:', order._id)
     } else {
-      console.log('❌ PhonePe payment failed for txn:', merchantTransactionId)
+      // Payment failed — mark order as Failed
+      if (merchantTxnId) {
+        await Order.findOneAndUpdate(
+          { transactionId: merchantTxnId, paymentStatus: 'Pending' },
+          { paymentStatus: 'Failed', orderStatus: 'Cancelled' }
+        )
+      }
+      console.log('❌ PhonePe callback: payment failed for txn', merchantTxnId)
     }
 
-    // PhonePe expects 200 OK always
     return res.status(200).json({ success: true })
   } catch (err) {
     console.error('PhonePe callback error:', err.message)
@@ -213,14 +219,41 @@ const checkPaymentStatus = async (req, res) => {
     const data = response.data
 
     if (data.success && data.code === 'PAYMENT_SUCCESS') {
-      // Find the order saved by callback
-      const order = await Order.findOne({ transactionId: txnId })
+      // Callback may have already updated it — or we update it now (idempotent)
+      const order = await Order.findOneAndUpdate(
+        { transactionId: txnId },
+        { paymentStatus: 'Paid' },
+        { new: true }
+      )
+
+      // If callback didn't fire, emit socket now
+      if (order && order.paymentStatus !== 'Paid') {
+        const io = req.app?.get('io')
+        if (io) {
+          io.emit('new-order', {
+            orderId:      order._id,
+            customerName: order.customerName,
+            totalAmount:  order.totalAmount,
+            phone:        order.phone,
+          })
+        }
+      }
+
       return res.status(200).json({
-        success:  true,
-        paid:     true,
-        orderId:  order?._id || null,
-        amount:   data.data?.amount ? data.data.amount / 100 : null,
+        success: true,
+        paid:    true,
+        orderId: order?._id || null,
+        amount:  data.data?.amount ? data.data.amount / 100 : null,
       })
+    }
+
+    // Payment still pending or failed
+    const currentOrder = await Order.findOne({ transactionId: txnId })
+    if (data.code === 'PAYMENT_ERROR' || data.code === 'PAYMENT_DECLINED' || data.code === 'TIMED_OUT') {
+      await Order.findOneAndUpdate(
+        { transactionId: txnId, paymentStatus: 'Pending' },
+        { paymentStatus: 'Failed', orderStatus: 'Cancelled' }
+      )
     }
 
     return res.status(200).json({
@@ -228,6 +261,7 @@ const checkPaymentStatus = async (req, res) => {
       paid:    false,
       code:    data.code,
       message: data.message,
+      orderId: currentOrder?._id || null,
     })
   } catch (err) {
     console.error('PhonePe status check error:', err?.response?.data || err.message)

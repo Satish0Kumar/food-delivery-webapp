@@ -1,31 +1,36 @@
 import { useState, useEffect } from 'react'
-import { ShoppingBag, CheckCircle, Clock, TrendingUp, ChefHat, Bike, AlertCircle } from 'lucide-react'
+import { ShoppingBag, CheckCircle, Clock, TrendingUp, ChefHat, Bike, AlertCircle, Calendar } from 'lucide-react'
 import { io } from 'socket.io-client'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 
 const SOCKET_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000'
 
 const STATUS_COLORS = {
-  Placed:            'bg-yellow-100 text-yellow-800',
-  Preparing:         'bg-purple-100 text-purple-800',
-  'Out for Delivery':'bg-orange-100 text-orange-800',
-  Delivered:         'bg-green-100 text-green-800',
-  Cancelled:         'bg-red-100 text-red-800',
+  Placed:             'bg-yellow-100 text-yellow-800',
+  Preparing:          'bg-purple-100 text-purple-800',
+  'Out for Delivery': 'bg-orange-100 text-orange-800',
+  Delivered:          'bg-green-100 text-green-800',
+  Cancelled:          'bg-red-100 text-red-800',
 }
 
 const Dashboard = () => {
-  const [orders, setOrders]   = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState('')
+  const [orders, setOrders]       = useState([])
+  const [apiStats, setApiStats]   = useState(null)
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState('')
   const token = localStorage.getItem('token')
 
-  const fetchOrders = async () => {
+  const fetchAll = async () => {
     try {
-      const res = await fetch('/api/orders', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const data = await res.json()
-      if (data.success) setOrders(data.data)
+      const [ordersRes, statsRes] = await Promise.all([
+        fetch('/api/orders', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/orders/stats', { headers: { Authorization: `Bearer ${token}` } }),
+      ])
+      const ordersData = await ordersRes.json()
+      const statsData  = await statsRes.json()
+      if (ordersData.success) setOrders(ordersData.data)
       else setError('Failed to load orders')
+      if (statsData.success) setApiStats(statsData.data)
     } catch {
       setError('Network error')
     } finally {
@@ -33,31 +38,51 @@ const Dashboard = () => {
     }
   }
 
-  useEffect(() => { fetchOrders() }, [])
+  useEffect(() => { fetchAll() }, [])
 
   useEffect(() => {
     const socket = io(SOCKET_URL, { transports: ['websocket'] })
-    socket.on('new-order', () => fetchOrders())
+    socket.on('new-order', () => fetchAll())
     return () => socket.disconnect()
   }, [])
 
+  // Local derived values (still used for active orders table + status grid)
   const today          = new Date().toDateString()
   const todayOrders    = orders.filter((o) => new Date(o.createdAt).toDateString() === today)
-  const todayRevenue   = todayOrders.reduce((s, o) => s + o.totalAmount, 0)
   const placedOrders   = orders.filter((o) => o.orderStatus === 'Placed').length
   const deliveredToday = todayOrders.filter((o) => o.orderStatus === 'Delivered').length
-  const totalRevenue   = orders.reduce((s, o) => s + o.totalAmount, 0)
   const inProgress     = orders.filter((o) => ['Preparing', 'Out for Delivery'].includes(o.orderStatus)).length
 
+  // Top 4 stat cards — use API stats where available, fall back to local
   const stats = [
-    { title: "Today's Orders", value: todayOrders.length, sub: `${orders.length} total`,        icon: ShoppingBag, iconColor:'text-blue-600',   bg:'bg-blue-50',   border:'border-blue-100'   },
-    { title: 'New Orders',     value: placedOrders,       sub: `${inProgress} in progress`,     icon: Clock,       iconColor:'text-yellow-600', bg:'bg-yellow-50', border:'border-yellow-100' },
-    { title: 'Delivered Today',value: deliveredToday,     sub: 'completed today',                icon: CheckCircle, iconColor:'text-green-600',  bg:'bg-green-50',  border:'border-green-100'  },
-    { title: "Today's Revenue",value: `₹${todayRevenue}`, sub: `₹${totalRevenue} all-time`,      icon: TrendingUp,  iconColor:'text-orange-600', bg:'bg-orange-50', border:'border-orange-100' },
+    {
+      title: "Today's Orders",
+      value: apiStats?.todayOrders ?? todayOrders.length,
+      sub:   `${apiStats?.totalOrders ?? orders.length} total`,
+      icon: ShoppingBag, iconColor: 'text-blue-600',   bg: 'bg-blue-50',   border: 'border-blue-100',
+    },
+    {
+      title: 'New Orders',
+      value: placedOrders,
+      sub:   `${inProgress} in progress`,
+      icon: Clock, iconColor: 'text-yellow-600', bg: 'bg-yellow-50', border: 'border-yellow-100',
+    },
+    {
+      title: 'This Month',
+      value: apiStats?.monthOrders ?? '—',
+      sub:   `${deliveredToday} delivered today`,
+      icon: Calendar, iconColor: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100',
+    },
+    {
+      title: 'Total Revenue',
+      value: apiStats ? `₹${apiStats.totalRevenue.toFixed(0)}` : '—',
+      sub:   `₹${todayOrders.reduce((s, o) => s + o.totalAmount, 0)} today`,
+      icon: TrendingUp, iconColor: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100',
+    },
   ]
 
   const activeOrders = orders
-    .filter((o) => !['Delivered','Cancelled'].includes(o.orderStatus))
+    .filter((o) => !['Delivered', 'Cancelled'].includes(o.orderStatus))
     .slice(0, 8)
 
   if (loading) return (
@@ -74,7 +99,7 @@ const Dashboard = () => {
       <div className="text-center">
         <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
         <p className="text-red-600 font-semibold">{error}</p>
-        <button onClick={fetchOrders} className="mt-4 bg-orange-500 text-white px-6 py-2 rounded-xl hover:bg-orange-600 transition-all">
+        <button onClick={fetchAll} className="mt-4 bg-orange-500 text-white px-6 py-2 rounded-xl hover:bg-orange-600 transition-all">
           Retry
         </button>
       </div>
@@ -93,7 +118,7 @@ const Dashboard = () => {
         <div className="bg-orange-50 border border-orange-100 rounded-2xl px-4 py-2 text-right">
           <p className="text-xs text-gray-400">Today</p>
           <p className="font-bold text-orange-600 text-sm">
-            {new Date().toLocaleDateString('en-IN', { weekday:'short', day:'2-digit', month:'short' })}
+            {new Date().toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}
           </p>
         </div>
       </div>
@@ -113,6 +138,26 @@ const Dashboard = () => {
             <p className="text-xs text-gray-400 mt-0.5">{stat.sub}</p>
           </div>
         ))}
+      </div>
+
+      {/* 7-Day Revenue Chart */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <h3 className="font-bold text-gray-900 mb-4">Revenue — Last 7 Days</h3>
+        {apiStats?.last7Days?.length > 0 ? (
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={apiStats.last7Days} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="_id" tick={{ fontSize: 12 }} tickFormatter={(d) => d.slice(5)} />
+              <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `₹${v}`} />
+              <Tooltip formatter={(v) => [`₹${v}`, 'Revenue']} />
+              <Bar dataKey="revenue" fill="#f97316" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="h-[220px] flex items-center justify-center text-gray-400 text-sm">
+            No order data in the last 7 days
+          </div>
+        )}
       </div>
 
       {/* Active Orders Table */}
@@ -135,7 +180,7 @@ const Dashboard = () => {
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Order ID','Customer','Items','Amount','Status','Time'].map((h) => (
+                  {['Order ID', 'Customer', 'Items', 'Amount', 'Status', 'Time'].map((h) => (
                     <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
@@ -158,7 +203,7 @@ const Dashboard = () => {
                       </span>
                     </td>
                     <td className="px-5 py-4 text-xs text-gray-400">
-                      {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' })}
+                      {new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                     </td>
                   </tr>
                 ))}
@@ -171,16 +216,17 @@ const Dashboard = () => {
       {/* Status Breakdown Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
-          { status:'Placed',            icon:Clock,        color:'text-yellow-600', bg:'bg-yellow-50' },
-          { status:'Preparing',         icon:ChefHat,      color:'text-purple-600', bg:'bg-purple-50' },
-          { status:'Out for Delivery',  icon:Bike,         color:'text-orange-600', bg:'bg-orange-50' },
-          { status:'Delivered',         icon:CheckCircle,  color:'text-green-600',  bg:'bg-green-50'  },
-          { status:'Cancelled',         icon:AlertCircle,  color:'text-red-600',    bg:'bg-red-50'    },
+          { status: 'Placed',            icon: Clock,        color: 'text-yellow-600', bg: 'bg-yellow-50' },
+          { status: 'Preparing',         icon: ChefHat,      color: 'text-purple-600', bg: 'bg-purple-50' },
+          { status: 'Out for Delivery',  icon: Bike,         color: 'text-orange-600', bg: 'bg-orange-50' },
+          { status: 'Delivered',         icon: CheckCircle,  color: 'text-green-600',  bg: 'bg-green-50'  },
+          { status: 'Cancelled',         icon: AlertCircle,  color: 'text-red-600',    bg: 'bg-red-50'    },
         ].map(({ status, icon: Icon, color, bg }) => (
           <div key={status} className={`${bg} rounded-2xl p-4 text-center`}>
             <Icon className={`w-5 h-5 ${color} mx-auto mb-2`} />
             <p className={`text-2xl font-extrabold ${color}`}>
-              {orders.filter((o) => o.orderStatus === status).length}
+              {apiStats?.statusCounts?.find((s) => s._id === status)?.count
+                ?? orders.filter((o) => o.orderStatus === status).length}
             </p>
             <p className="text-xs text-gray-500 mt-0.5 leading-tight">{status}</p>
           </div>

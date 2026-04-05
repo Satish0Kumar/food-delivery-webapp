@@ -58,7 +58,7 @@ const CheckoutPage = () => {
   }
 
   const handleCOD = async (payload) => {
-    const res  = await fetch('/api/orders', {
+    const res  = await fetch(`${import.meta.env.VITE_API_URL}/api/orders`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ ...payload, paymentMethod: 'COD' }),
@@ -73,7 +73,7 @@ const CheckoutPage = () => {
   }
 
   const handleOnline = async (payload) => {
-    const res  = await fetch('/api/payment/initiate', {
+    const res  = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/initiate`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ ...payload, totalAmount }),

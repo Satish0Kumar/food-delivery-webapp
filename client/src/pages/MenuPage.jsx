@@ -24,7 +24,7 @@ const MenuPage = () => {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/items')
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/items`)
       if (!res.ok) throw new Error(`Server error: ${res.status}`)
       const data = await res.json()
       if (data.success) setItems(data.data)

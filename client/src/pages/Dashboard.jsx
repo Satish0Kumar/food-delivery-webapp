@@ -23,8 +23,8 @@ const Dashboard = () => {
   const fetchAll = async () => {
     try {
       const [ordersRes, statsRes] = await Promise.all([
-        fetch('/api/orders', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/orders/stats', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${import.meta.env.VITE_API_URL}/api/orders`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${import.meta.env.VITE_API_URL}/api/orders/stats`, { headers: { Authorization: `Bearer ${token}` } }),
       ])
       const ordersData = await ordersRes.json()
       const statsData  = await statsRes.json()

@@ -29,7 +29,7 @@ const Menu = () => {
   const fetchMenu = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/items', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/items`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       const data = await res.json()
@@ -88,7 +88,7 @@ const Menu = () => {
     formData.append('image', file)
 
     try {
-      const res = await fetch('/api/upload', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/upload`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
@@ -110,7 +110,7 @@ const Menu = () => {
     e.preventDefault()
     setSaving(true)
     try {
-      const url = editItem ? `/api/items/${editItem._id}` : '/api/items'
+      const url = editItem ? `${import.meta.env.VITE_API_URL}/api/items/${editItem._id}` : `${import.meta.env.VITE_API_URL}/api/items`
       const method = editItem ? 'PUT' : 'POST'
       const res = await fetch(url, {
         method,
@@ -141,7 +141,7 @@ const Menu = () => {
   const deleteItem = async (id) => {
     if (!window.confirm('Delete this menu item?')) return
     try {
-      const res = await fetch(`/api/items/${id}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/items/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -155,7 +155,7 @@ const Menu = () => {
 
   const toggleAvailability = async (item) => {
     try {
-      const res = await fetch(`/api/items/${item._id}/availability`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/items/${item._id}/availability`, {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}` }
       })

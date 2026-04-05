@@ -46,14 +46,17 @@ const Dashboard = () => {
     return () => socket.disconnect()
   }, [])
 
-  // Local derived values (still used for active orders table + status grid)
   const today          = new Date().toDateString()
   const todayOrders    = orders.filter((o) => new Date(o.createdAt).toDateString() === today)
   const placedOrders   = orders.filter((o) => o.orderStatus === 'Placed').length
   const deliveredToday = todayOrders.filter((o) => o.orderStatus === 'Delivered').length
   const inProgress     = orders.filter((o) => ['Preparing', 'Out for Delivery'].includes(o.orderStatus)).length
 
-  // Top 4 stat cards — use API stats where available, fall back to local
+  // Phase 8: today's revenue — use API todayRevenue (Paid only) or compute locally
+  const localTodayRevenue = todayOrders
+    .filter((o) => o.paymentStatus === 'Paid')
+    .reduce((s, o) => s + o.totalAmount, 0)
+
   const stats = [
     {
       title: "Today's Orders",
@@ -74,9 +77,10 @@ const Dashboard = () => {
       icon: Calendar, iconColor: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100',
     },
     {
+      // Phase 8: revenue shows confirmed (Paid) only — no Pending orders counted
       title: 'Total Revenue',
       value: apiStats ? `₹${apiStats.totalRevenue.toFixed(0)}` : '—',
-      sub:   `₹${todayOrders.reduce((s, o) => s + o.totalAmount, 0)} today`,
+      sub:   `₹${apiStats?.todayRevenue ?? localTodayRevenue} today (paid)`,
       icon: TrendingUp, iconColor: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100',
     },
   ]
@@ -140,9 +144,12 @@ const Dashboard = () => {
         ))}
       </div>
 
-      {/* 7-Day Revenue Chart */}
+      {/* 7-Day Revenue Chart — Phase 8: Paid orders only */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h3 className="font-bold text-gray-900 mb-4">Revenue — Last 7 Days</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-gray-900">Revenue — Last 7 Days</h3>
+          <span className="text-xs text-gray-400 bg-green-50 text-green-600 px-2.5 py-1 rounded-full font-semibold">Paid only</span>
+        </div>
         {apiStats?.last7Days?.length > 0 ? (
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={apiStats.last7Days} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
@@ -155,10 +162,33 @@ const Dashboard = () => {
           </ResponsiveContainer>
         ) : (
           <div className="h-[220px] flex items-center justify-center text-gray-400 text-sm">
-            No order data in the last 7 days
+            No confirmed revenue in the last 7 days
           </div>
         )}
       </div>
+
+      {/* Phase 8: Payment Status Summary */}
+      {apiStats?.paymentStatusCounts?.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <h3 className="font-bold text-gray-900 mb-4">Payment Overview</h3>
+          <div className="grid grid-cols-3 gap-3">
+            {['Paid', 'Pending', 'Failed'].map((ps) => {
+              const count  = apiStats.paymentStatusCounts.find((s) => s._id === ps)?.count ?? 0
+              const styles = {
+                Paid:    { bg: 'bg-green-50',  text: 'text-green-700',  label: '✅ Paid'    },
+                Pending: { bg: 'bg-yellow-50', text: 'text-yellow-700', label: '⏳ Pending' },
+                Failed:  { bg: 'bg-red-50',    text: 'text-red-700',    label: '❌ Failed'  },
+              }[ps]
+              return (
+                <div key={ps} className={`${styles.bg} rounded-2xl p-4 text-center`}>
+                  <p className={`text-2xl font-extrabold ${styles.text}`}>{count}</p>
+                  <p className={`text-xs font-semibold mt-1 ${styles.text}`}>{styles.label}</p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Active Orders Table */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
@@ -180,7 +210,7 @@ const Dashboard = () => {
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Order ID', 'Customer', 'Items', 'Amount', 'Status', 'Time'].map((h) => (
+                  {['Order ID', 'Customer', 'Items', 'Amount', 'Payment', 'Status', 'Time'].map((h) => (
                     <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
@@ -197,6 +227,16 @@ const Dashboard = () => {
                       {order.items.map((i) => `${i.name} ×${i.quantity}`).join(', ')}
                     </td>
                     <td className="px-5 py-4 font-bold text-gray-900 text-sm">₹{order.totalAmount}</td>
+                    {/* Phase 8: payment status badge in active orders table */}
+                    <td className="px-5 py-4">
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                        order.paymentStatus === 'Paid'    ? 'bg-green-100 text-green-700'  :
+                        order.paymentStatus === 'Failed'  ? 'bg-red-100 text-red-700'      :
+                        'bg-yellow-100 text-yellow-700'
+                      }`}>
+                        {order.paymentMethod === 'COD' ? 'COD' : order.paymentStatus}
+                      </span>
+                    </td>
                     <td className="px-5 py-4">
                       <span className={`text-xs font-semibold px-3 py-1 rounded-full ${STATUS_COLORS[order.orderStatus] || 'bg-gray-100'}`}>
                         {order.orderStatus}

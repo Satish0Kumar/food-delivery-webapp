@@ -24,7 +24,7 @@ const initiatePayment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'All fields are required' })
     }
 
-    // ── Step 1: Verify items & calculate total from DB (same as COD) ──
+    // Verify items & calculate total from DB
     const orderItems = []
     let calculatedTotal = 0
 
@@ -45,8 +45,7 @@ const initiatePayment = async (req, res) => {
       calculatedTotal += dbItem.price * item.quantity
     }
 
-    // ── Step 2: Save order to DB immediately with paymentStatus: Pending ──
-    // This ensures it exists in DB regardless of callback reliability
+    // Save order immediately with paymentStatus: Pending
     const merchantTransactionId = `MT${Date.now()}_${Math.random().toString(36).slice(2, 7).toUpperCase()}`
 
     const order = await Order.create({
@@ -56,17 +55,17 @@ const initiatePayment = async (req, res) => {
       items:          orderItems,
       totalAmount:    calculatedTotal,
       paymentMethod:  'ONLINE',
-      paymentStatus:  'Pending',   // will be updated to Paid on success
+      paymentStatus:  'Pending',
       orderStatus:    'Placed',
       transactionId:  merchantTransactionId,
     })
 
-    // ── Step 3: Build PhonePe payload ──
+    // Build PhonePe payload
     const payload = {
       merchantId:            MERCHANT_ID,
       merchantTransactionId,
       merchantUserId:        `USR_${phone}`,
-      amount:                calculatedTotal * 100,   // paise
+      amount:                calculatedTotal * 100,
       redirectUrl:           `${CLIENT_URL}/payment-status?txnId=${merchantTransactionId}`,
       redirectMode:          'REDIRECT',
       callbackUrl:           `${CALLBACK_URL}/api/payment/callback`,
@@ -130,7 +129,7 @@ const paymentCallback = async (req, res) => {
       return res.status(400).json({ success: false, message: 'No response payload' })
     }
 
-    // ── Verify checksum ──
+    // Verify checksum
     const xVerifyHeader = req.headers['x-verify']
     const [receivedHash] = (xVerifyHeader || '').split('###')
 
@@ -144,14 +143,12 @@ const paymentCallback = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Checksum mismatch' })
     }
 
-    // ── Decode response ──
     const decoded        = JSON.parse(Buffer.from(encodedResponse, 'base64').toString())
     const txnData        = decoded.data
     const paymentSuccess = decoded.code === 'PAYMENT_SUCCESS'
     const merchantTxnId  = txnData?.merchantTransactionId
 
     if (paymentSuccess && merchantTxnId) {
-      // Find the order we saved at initiation by transactionId
       const order = await Order.findOneAndUpdate(
         { transactionId: merchantTxnId, paymentStatus: 'Pending' },
         { paymentStatus: 'Paid' },
@@ -175,7 +172,6 @@ const paymentCallback = async (req, res) => {
         console.warn('⚠️ PhonePe callback: no pending order found for txn', merchantTxnId)
       }
     } else {
-      // Payment failed — mark order as Failed
       if (merchantTxnId) {
         await Order.findOneAndUpdate(
           { transactionId: merchantTxnId, paymentStatus: 'Pending' },
@@ -219,15 +215,15 @@ const checkPaymentStatus = async (req, res) => {
     const data = response.data
 
     if (data.success && data.code === 'PAYMENT_SUCCESS') {
-      // Callback may have already updated it — or we update it now (idempotent)
+      // Idempotent update — safe to call multiple times
       const order = await Order.findOneAndUpdate(
         { transactionId: txnId },
         { paymentStatus: 'Paid' },
         { new: true }
       )
 
-      // If callback didn't fire, emit socket now
-      if (order && order.paymentStatus !== 'Paid') {
+      // Phase 8: if callback never fired, emit socket now so admin sees it live
+      if (order) {
         const io = req.app?.get('io')
         if (io) {
           io.emit('new-order', {
@@ -236,6 +232,11 @@ const checkPaymentStatus = async (req, res) => {
             totalAmount:  order.totalAmount,
             phone:        order.phone,
           })
+        }
+        // Also trigger email/push if not already sent (fire-and-forget, idempotent ok)
+        if (order.paymentStatus === 'Pending') {
+          sendOrderEmail(order)
+          sendPushNotification(order)
         }
       }
 
@@ -247,9 +248,10 @@ const checkPaymentStatus = async (req, res) => {
       })
     }
 
-    // Payment still pending or failed
     const currentOrder = await Order.findOne({ transactionId: txnId })
-    if (data.code === 'PAYMENT_ERROR' || data.code === 'PAYMENT_DECLINED' || data.code === 'TIMED_OUT') {
+
+    const failCodes = ['PAYMENT_ERROR', 'PAYMENT_DECLINED', 'TIMED_OUT']
+    if (failCodes.includes(data.code)) {
       await Order.findOneAndUpdate(
         { transactionId: txnId, paymentStatus: 'Pending' },
         { paymentStatus: 'Failed', orderStatus: 'Cancelled' }

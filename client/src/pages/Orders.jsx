@@ -15,7 +15,13 @@ const STATUS_COLORS = {
   Cancelled:         'bg-red-100 text-red-800 border-red-200',
 }
 
-// Only valid next steps per status
+// Phase 8: color badges for payment status
+const PAYMENT_STATUS_COLORS = {
+  Paid:    'bg-green-100 text-green-700 border-green-200',
+  Pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  Failed:  'bg-red-100 text-red-700 border-red-200',
+}
+
 const STATUS_FLOW = {
   Placed:            ['Preparing', 'Cancelled'],
   Preparing:         ['Out for Delivery', 'Cancelled'],
@@ -25,13 +31,14 @@ const STATUS_FLOW = {
 }
 
 const Orders = () => {
-  const [orders, setOrders]           = useState([])
-  const [loading, setLoading]         = useState(true)
-  const [error, setError]             = useState('')
-  const [updatingId, setUpdatingId]   = useState(null)
-  const [filterStatus, setFilterStatus] = useState('All')
-  const [search, setSearch]           = useState('')
+  const [orders, setOrders]               = useState([])
+  const [loading, setLoading]             = useState(true)
+  const [error, setError]                 = useState('')
+  const [updatingId, setUpdatingId]       = useState(null)
+  const [filterStatus, setFilterStatus]   = useState('All')
   const [filterPayment, setFilterPayment] = useState('All')
+  const [filterPayStatus, setFilterPayStatus] = useState('All')  // Phase 8
+  const [search, setSearch]               = useState('')
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [newOrderAlert, setNewOrderAlert] = useState(null)
   const [alertVisible, setAlertVisible]   = useState(false)
@@ -57,7 +64,6 @@ const Orders = () => {
 
   useEffect(() => { fetchOrders() }, [fetchOrders])
 
-  // Socket.io — real-time new order alert
   useEffect(() => {
     const socket = io(SOCKET_URL, { transports: ['websocket'] })
     socket.on('new-order', (payload) => {
@@ -97,22 +103,24 @@ const Orders = () => {
     }
   }
 
+  // Phase 8: added filterPayStatus to filter logic
   const filteredOrders = orders.filter((o) => {
     const matchSearch =
       o.customerName.toLowerCase().includes(search.toLowerCase()) ||
       o.phone.includes(search) ||
       o._id.includes(search)
-    const matchStatus  = filterStatus  === 'All' || o.orderStatus   === filterStatus
-    const matchPayment = filterPayment === 'All' || o.paymentMethod === filterPayment
-    return matchSearch && matchStatus && matchPayment
+    const matchStatus     = filterStatus    === 'All' || o.orderStatus   === filterStatus
+    const matchPayment    = filterPayment   === 'All' || o.paymentMethod  === filterPayment
+    const matchPayStatus  = filterPayStatus === 'All' || o.paymentStatus  === filterPayStatus
+    return matchSearch && matchStatus && matchPayment && matchPayStatus
   })
 
   const exportCSV = () => {
     const rows = [
-      ['Order ID', 'Customer', 'Phone', 'Amount', 'Payment', 'Status', 'Date'],
+      ['Order ID', 'Customer', 'Phone', 'Amount', 'Payment Method', 'Payment Status', 'Order Status', 'Date'],
       ...filteredOrders.map((o) => [
         o._id, o.customerName, o.phone, o.totalAmount,
-        o.paymentMethod, o.orderStatus,
+        o.paymentMethod, o.paymentStatus, o.orderStatus,
         new Date(o.createdAt).toLocaleDateString(),
       ]),
     ]
@@ -123,9 +131,9 @@ const Orders = () => {
     a.click()
   }
 
-  const today = new Date().toDateString()
+  const today          = new Date().toDateString()
   const todayOrders    = orders.filter((o) => new Date(o.createdAt).toDateString() === today)
-  const todayRevenue   = todayOrders.reduce((s, o) => s + o.totalAmount, 0)
+  const todayRevenue   = todayOrders.filter((o) => o.paymentStatus === 'Paid').reduce((s, o) => s + o.totalAmount, 0)  // Phase 8: Paid only
   const pendingCount   = orders.filter((o) => o.orderStatus === 'Placed').length
   const preparingCount = orders.filter((o) => ['Preparing', 'Out for Delivery'].includes(o.orderStatus)).length
 
@@ -154,7 +162,10 @@ const Orders = () => {
               <p className="font-bold text-gray-900 text-sm">🍛 New Order!</p>
               <p className="text-gray-600 text-xs">{newOrderAlert.customerName} · ₹{newOrderAlert.totalAmount}</p>
             </div>
-            <button onClick={() => setAlertVisible(false)} className="p-1 hover:bg-gray-100 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center">
+            <button
+              onClick={() => setAlertVisible(false)}
+              className="p-1 hover:bg-gray-100 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
+            >
               <X className="w-4 h-4 text-gray-400" />
             </button>
           </div>
@@ -179,10 +190,10 @@ const Orders = () => {
       {/* Quick Stats Strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Today's Orders", value: todayOrders.length,  color: 'text-blue-600',   bg: 'bg-blue-50'   },
-          { label: "Today's Revenue", value: `₹${todayRevenue}`, color: 'text-green-600',  bg: 'bg-green-50'  },
-          { label: 'New (Placed)',    value: pendingCount,         color: 'text-yellow-600', bg: 'bg-yellow-50' },
-          { label: 'In Progress',     value: preparingCount,       color: 'text-purple-600', bg: 'bg-purple-50' },
+          { label: "Today's Orders",  value: todayOrders.length,  color: 'text-blue-600',   bg: 'bg-blue-50'   },
+          { label: "Today's Revenue", value: `₹${todayRevenue}`,  color: 'text-green-600',  bg: 'bg-green-50'  },
+          { label: 'New (Placed)',     value: pendingCount,         color: 'text-yellow-600', bg: 'bg-yellow-50' },
+          { label: 'In Progress',      value: preparingCount,       color: 'text-purple-600', bg: 'bg-purple-50' },
         ].map((s) => (
           <div key={s.label} className={`${s.bg} rounded-2xl px-4 py-3`}>
             <p className={`text-2xl font-extrabold ${s.color}`}>{s.value}</p>
@@ -191,7 +202,7 @@ const Orders = () => {
         ))}
       </div>
 
-      {/* Search + Payment Filter + CSV Export */}
+      {/* Search + Filters + Export */}
       <div className="flex flex-wrap gap-3 items-center justify-between">
         <div className="flex gap-2 flex-wrap">
           <input
@@ -201,12 +212,21 @@ const Orders = () => {
             onChange={(e) => setSearch(e.target.value)}
             className="border border-gray-200 rounded-xl px-3 py-2 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-orange-400"
           />
+          {/* Payment Method filter */}
           <select
             value={filterPayment}
             onChange={(e) => setFilterPayment(e.target.value)}
             className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
           >
             {['All', 'COD', 'ONLINE'].map((p) => <option key={p}>{p}</option>)}
+          </select>
+          {/* Phase 8: Payment Status filter */}
+          <select
+            value={filterPayStatus}
+            onChange={(e) => setFilterPayStatus(e.target.value)}
+            className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+          >
+            {['All', 'Paid', 'Pending', 'Failed'].map((p) => <option key={p}>{p}</option>)}
           </select>
         </div>
         <button
@@ -217,7 +237,7 @@ const Orders = () => {
         </button>
       </div>
 
-      {/* Filter Tabs */}
+      {/* Order Status Filter Tabs */}
       <div className="flex space-x-2 overflow-x-auto pb-1">
         {['All', ...STATUS_OPTIONS].map((status) => (
           <button
@@ -272,6 +292,12 @@ const Orders = () => {
                     <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${STATUS_COLORS[order.orderStatus] || 'bg-gray-100 text-gray-700'}`}>
                       {order.orderStatus}
                     </span>
+                    {/* Phase 8: Payment status badge with color */}
+                    <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${
+                      PAYMENT_STATUS_COLORS[order.paymentStatus] || 'bg-gray-100 text-gray-600 border-gray-200'
+                    }`}>
+                      {order.paymentMethod === 'COD' ? '💵 COD' : `📱 ${order.paymentStatus}`}
+                    </span>
                     <span className="text-xs text-gray-400 ml-auto">
                       {new Date(order.createdAt).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
                     </span>
@@ -288,13 +314,6 @@ const Orders = () => {
                       </span>
                     ))}
                   </div>
-                  <p className="text-xs text-gray-400">
-                    {order.paymentMethod === 'COD' ? '💵 Cash on Delivery' : '📱 Online Payment'}
-                    {' • '}
-                    <span className={order.paymentStatus === 'Paid' ? 'text-green-600 font-semibold' : 'text-yellow-600 font-semibold'}>
-                      {order.paymentStatus}
-                    </span>
-                  </p>
                 </div>
 
                 {/* Right */}

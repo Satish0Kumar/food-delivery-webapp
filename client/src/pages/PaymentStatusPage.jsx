@@ -3,6 +3,10 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle, XCircle, Loader2, RefreshCw } from 'lucide-react'
 
+const POLL_MAX      = 10
+const POLL_INTERVAL = 4000
+const FAIL_CODES    = ['PAYMENT_ERROR', 'PAYMENT_DECLINED', 'TIMED_OUT']
+
 const PaymentStatusPage = () => {
   const [searchParams] = useSearchParams()
   const navigate       = useNavigate()
@@ -14,7 +18,8 @@ const PaymentStatusPage = () => {
   const [amount, setAmount]             = useState(null)
   const [customerName, setCustomerName] = useState('')
   const [countdown, setCountdown]       = useState(10)
-  const pollRef = useRef(null)
+  const pollRef    = useRef(null)
+  const attemptsRef = useRef(0)   // Phase 8: ref so resetPoll works cleanly
 
   useEffect(() => {
     const pending = sessionStorage.getItem('pendingOrder')
@@ -27,14 +32,19 @@ const PaymentStatusPage = () => {
     }
   }, [])
 
-  useEffect(() => {
+  // Phase 8: extracted poll logic so checkAgain button can restart from 0
+  const startPolling = () => {
+    clearTimeout(pollRef.current)
+    attemptsRef.current = 0
+    setStatus('checking')
+
     if (!txnId) { setStatus('failed'); return }
-    let attempts = 0
-    const MAX    = 10
+
     const poll = async () => {
       try {
         const res  = await fetch(`/api/payment/status/${txnId}`)
         const data = await res.json()
+
         if (data.paid) {
           if (data.orderId) setOrderId(data.orderId)
           if (data.amount)  setAmount(data.amount)
@@ -42,27 +52,48 @@ const PaymentStatusPage = () => {
           sessionStorage.removeItem('pendingOrder')
           return
         }
-        const failCodes = ['PAYMENT_ERROR', 'PAYMENT_DECLINED', 'TIMED_OUT']
-        if (failCodes.includes(data.code)) { setStatus('failed'); return }
-        attempts++
-        if (attempts < MAX) pollRef.current = setTimeout(poll, 4000)
-        else {
-          const dbRes  = await fetch(`/api/payment/status/${txnId}`)
-          const dbData = await dbRes.json()
-          setStatus(dbData.paid ? 'success' : 'failed')
-          if (dbData.orderId) setOrderId(dbData.orderId)
-          if (dbData.amount)  setAmount(dbData.amount)
+
+        if (FAIL_CODES.includes(data.code)) {
+          if (data.orderId) setOrderId(data.orderId)
+          setStatus('failed')
+          return
+        }
+
+        attemptsRef.current += 1
+        if (attemptsRef.current < POLL_MAX) {
+          pollRef.current = setTimeout(poll, POLL_INTERVAL)
+        } else {
+          // Final check after max attempts
+          try {
+            const finalRes  = await fetch(`/api/payment/status/${txnId}`)
+            const finalData = await finalRes.json()
+            setStatus(finalData.paid ? 'success' : 'failed')
+            if (finalData.orderId) setOrderId(finalData.orderId)
+            if (finalData.amount)  setAmount(finalData.amount)
+          } catch {
+            setStatus('failed')
+          }
         }
       } catch {
-        attempts++
-        if (attempts < MAX) pollRef.current = setTimeout(poll, 4000)
-        else setStatus('failed')
+        attemptsRef.current += 1
+        if (attemptsRef.current < POLL_MAX) {
+          pollRef.current = setTimeout(poll, POLL_INTERVAL)
+        } else {
+          setStatus('failed')
+        }
       }
     }
-    poll()
-    return () => clearTimeout(pollRef.current)
-  }, [txnId])
 
+    poll()
+  }
+
+  // Start polling on mount
+  useEffect(() => {
+    startPolling()
+    return () => clearTimeout(pollRef.current)
+  }, [txnId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-redirect countdown after success
   useEffect(() => {
     if (status !== 'success') return
     const timer = setInterval(() => {
@@ -74,6 +105,7 @@ const PaymentStatusPage = () => {
     return () => clearInterval(timer)
   }, [status, navigate])
 
+  // ── Checking ──
   if (status === 'checking') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
@@ -89,6 +121,7 @@ const PaymentStatusPage = () => {
     )
   }
 
+  // ── Success ──
   if (status === 'success') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-8">
@@ -127,10 +160,16 @@ const PaymentStatusPage = () => {
           </div>
           <p className="text-xs text-gray-400 mb-6">{t('redirecting', { seconds: countdown })}</p>
           <div className="flex space-x-3">
-            <button onClick={() => navigate('/menu')} className="flex-1 border border-orange-200 text-orange-500 font-bold py-3 rounded-2xl hover:bg-orange-50 active:bg-orange-100 transition-all min-h-[52px]">
+            <button
+              onClick={() => navigate('/menu')}
+              className="flex-1 border border-orange-200 text-orange-500 font-bold py-3 rounded-2xl hover:bg-orange-50 active:bg-orange-100 transition-all min-h-[52px]"
+            >
               {t('orderMore')}
             </button>
-            <button onClick={() => navigate('/')} className="flex-1 bg-orange-500 text-white font-bold py-3 rounded-2xl hover:bg-orange-600 active:bg-orange-700 transition-all min-h-[52px]">
+            <button
+              onClick={() => navigate('/')}
+              className="flex-1 bg-orange-500 text-white font-bold py-3 rounded-2xl hover:bg-orange-600 active:bg-orange-700 transition-all min-h-[52px]"
+            >
               {t('goHome')}
             </button>
           </div>
@@ -139,6 +178,7 @@ const PaymentStatusPage = () => {
     )
   }
 
+  // ── Failed ──
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-8">
       <div className="bg-white rounded-3xl shadow-lg p-8 max-w-md w-full text-center">
@@ -154,17 +194,24 @@ const PaymentStatusPage = () => {
           <p className="text-sm text-gray-500">{t('retryInfo')}</p>
         </div>
         <div className="flex flex-col space-y-3">
+          {/* Phase 8: Check Again properly resets poll from attempt 0 */}
           <button
-            onClick={() => setStatus('checking')}
+            onClick={startPolling}
             className="flex items-center justify-center space-x-2 border border-gray-200 text-gray-700 font-bold py-3 rounded-2xl hover:bg-gray-50 active:bg-gray-100 transition-all min-h-[52px]"
           >
             <RefreshCw className="w-4 h-4" aria-hidden="true" />
             <span>{t('checkAgain')}</span>
           </button>
-          <button onClick={() => navigate('/checkout')} className="bg-orange-500 text-white font-bold py-3 rounded-2xl hover:bg-orange-600 active:bg-orange-700 transition-all min-h-[52px]">
+          <button
+            onClick={() => navigate('/checkout')}
+            className="bg-orange-500 text-white font-bold py-3 rounded-2xl hover:bg-orange-600 active:bg-orange-700 transition-all min-h-[52px]"
+          >
             {t('tryAgainBtn')}
           </button>
-          <button onClick={() => navigate('/menu')} className="text-gray-400 text-sm py-2 hover:text-gray-600 transition-all min-h-[44px]">
+          <button
+            onClick={() => navigate('/menu')}
+            className="text-gray-400 text-sm py-2 hover:text-gray-600 transition-all min-h-[44px]"
+          >
             {t('backToMenu')}
           </button>
         </div>

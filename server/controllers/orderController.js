@@ -10,7 +10,6 @@ const placeOrder = async (req, res) => {
   try {
     const { customerName, phone, address, items, paymentMethod } = req.body;
 
-    // Validation
     if (!customerName || !phone || !address || !items.length) {
       return res.status(400).json({
         success: false,
@@ -18,31 +17,26 @@ const placeOrder = async (req, res) => {
       });
     }
 
-    // Verify items exist and calculate total
     let totalAmount = 0;
     const orderItems = [];
 
     for (const item of items) {
       const dbItem = await Item.findById(item.itemId);
-      
       if (!dbItem || !dbItem.isAvailable) {
         return res.status(400).json({
           success: false,
           message: `${dbItem?.name || item.name} is not available`,
         });
       }
-
       orderItems.push({
         itemId: item.itemId,
         name: dbItem.name,
         price: dbItem.price,
         quantity: item.quantity,
       });
-
       totalAmount += dbItem.price * item.quantity;
     }
 
-    // Create order
     const order = await Order.create({
       customerName,
       phone,
@@ -62,22 +56,13 @@ const placeOrder = async (req, res) => {
       });
     }
 
-    // Email notification — fire and forget
     sendOrderEmail(order);
-
-    // FCM push notification — fire and forget
     sendPushNotification(order);
 
-    res.status(201).json({
-      success: true,
-      data: order,
-    });
+    res.status(201).json({ success: true, data: order });
   } catch (error) {
     console.error("Place order error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -90,16 +75,9 @@ const getOrders = async (req, res) => {
       .populate("items.itemId", "name price image")
       .sort({ createdAt: -1 });
 
-    res.status(200).json({
-      success: true,
-      count: orders.length,
-      data: orders,
-    });
+    res.status(200).json({ success: true, count: orders.length, data: orders });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -109,12 +87,8 @@ const getOrders = async (req, res) => {
 const updateOrderStatus = async (req, res) => {
   try {
     const { status } = req.body;
-
     if (!status) {
-      return res.status(400).json({
-        success: false,
-        message: "Status is required",
-      });
+      return res.status(400).json({ success: false, message: "Status is required" });
     }
 
     const order = await Order.findByIdAndUpdate(
@@ -124,21 +98,12 @@ const updateOrderStatus = async (req, res) => {
     );
 
     if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
+      return res.status(404).json({ success: false, message: "Order not found" });
     }
 
-    res.status(200).json({
-      success: true,
-      data: order,
-    });
+    res.status(200).json({ success: true, data: order });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -152,20 +117,29 @@ const getOrderStats = async (req, res) => {
     startOfToday.setHours(0, 0, 0, 0)
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
 
-    const [totalOrders, todayOrders, monthOrders, revenueAgg, statusCounts, last7Days] =
+    const [totalOrders, todayOrders, monthOrders, revenueAgg, todayRevenueAgg, statusCounts, paymentStatusCounts, last7Days] =
       await Promise.all([
         Order.countDocuments(),
         Order.countDocuments({ createdAt: { $gte: startOfToday } }),
         Order.countDocuments({ createdAt: { $gte: startOfMonth } }),
+        // Phase 8 fix: only count PAID orders for total revenue (not Pending)
         Order.aggregate([
-          { $match: { paymentStatus: { $in: ['Paid', 'Pending'] }, orderStatus: { $ne: 'Cancelled' } } },
+          { $match: { paymentStatus: 'Paid', orderStatus: { $ne: 'Cancelled' } } },
+          { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+        ]),
+        // Phase 8: today's confirmed revenue (Paid only)
+        Order.aggregate([
+          { $match: { paymentStatus: 'Paid', orderStatus: { $ne: 'Cancelled' }, createdAt: { $gte: startOfToday } } },
           { $group: { _id: null, total: { $sum: '$totalAmount' } } },
         ]),
         Order.aggregate([{ $group: { _id: '$orderStatus', count: { $sum: 1 } } }]),
+        // Phase 8: payment status breakdown
+        Order.aggregate([{ $group: { _id: '$paymentStatus', count: { $sum: 1 } } }]),
         Order.aggregate([
           {
             $match: {
               createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+              paymentStatus: 'Paid',   // Phase 8: chart only shows confirmed revenue
               orderStatus: { $ne: 'Cancelled' },
             },
           },
@@ -186,8 +160,10 @@ const getOrderStats = async (req, res) => {
         totalOrders,
         todayOrders,
         monthOrders,
-        totalRevenue: revenueAgg[0]?.total || 0,
+        totalRevenue:  revenueAgg[0]?.total || 0,
+        todayRevenue:  todayRevenueAgg[0]?.total || 0,
         statusCounts,
+        paymentStatusCounts,   // Phase 8: Paid/Pending/Failed breakdown
         last7Days,
       },
     })

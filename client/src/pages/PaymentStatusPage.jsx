@@ -42,7 +42,7 @@ const PaymentStatusPage = () => {
 
     const poll = async () => {
       try {
-        const res  = await fetch(`/api/payment/status/${txnId}`)
+        const res  = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/status/${txnId}`)
         const data = await res.json()
 
         if (data.paid) {
@@ -65,7 +65,7 @@ const PaymentStatusPage = () => {
         } else {
           // Final check after max attempts
           try {
-            const finalRes  = await fetch(`/api/payment/status/${txnId}`)
+            const finalRes  = await fetch(`${import.meta.env.VITE_API_URL}/api/payment/status/${txnId}`)
             const finalData = await finalRes.json()
             setStatus(finalData.paid ? 'success' : 'failed')
             if (finalData.orderId) setOrderId(finalData.orderId)

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2, X, Check } from 'lucide-react'
 
 const CATEGORIES = ['Starters', 'Main Course', 'Breads', 'Rice', 'Desserts', 'Beverages']
+const MAX_FILE_SIZE_MB = 5
 
 const defaultForm = {
   name: '',
@@ -19,6 +20,7 @@ const Menu = () => {
   const [editItem, setEditItem] = useState(null)
   const [form, setForm] = useState(defaultForm)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [filterCategory, setFilterCategory] = useState('All')
   const [error, setError] = useState('')
 
@@ -44,6 +46,7 @@ const Menu = () => {
   const openAdd = () => {
     setEditItem(null)
     setForm(defaultForm)
+    setError('')
     setShowForm(true)
   }
 
@@ -57,6 +60,7 @@ const Menu = () => {
       isAvailable: item.isAvailable,
       image: item.image || ''
     })
+    setError('')
     setShowForm(true)
   }
 
@@ -64,6 +68,42 @@ const Menu = () => {
     setShowForm(false)
     setEditItem(null)
     setForm(defaultForm)
+    setError('')
+  }
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    // Phase 7 Step 9 — file size validation (5 MB cap)
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      setError(`Image too large. Please choose a file under ${MAX_FILE_SIZE_MB}MB. Tip: compress at squoosh.app before uploading.`)
+      e.target.value = ''
+      return
+    }
+
+    setUploading(true)
+    setError('')
+    const formData = new FormData()
+    formData.append('image', file)
+
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      })
+      const data = await res.json()
+      if (data.success) {
+        setForm(prev => ({ ...prev, image: data.url }))
+      } else {
+        setError('Image upload failed. Try again.')
+      }
+    } catch {
+      setError('Image upload failed. Check your connection.')
+    } finally {
+      setUploading(false)
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -81,7 +121,7 @@ const Menu = () => {
         body: JSON.stringify({
           ...form,
           price: Number(form.price),
-          image: form.image || 'https://via.placeholder.com/300x200?text=No+Image'
+          image: form.image || 'https://placehold.co/300x200/FFF3E0/E65100?text=Food'
         })
       })
       const data = await res.json()
@@ -92,7 +132,7 @@ const Menu = () => {
         setError(data.message || 'Save failed')
       }
     } catch {
-      setError('Something went wrong')
+      setError('Something went wrong. Check your connection.')
     } finally {
       setSaving(false)
     }
@@ -107,8 +147,9 @@ const Menu = () => {
       })
       const data = await res.json()
       if (data.success) setItems(prev => prev.filter(i => i._id !== id))
+      else alert('Delete failed: ' + (data.message || 'Unknown error'))
     } catch {
-      alert('Delete failed')
+      alert('Delete failed. Check your connection.')
     }
   }
 
@@ -125,7 +166,7 @@ const Menu = () => {
         )
       }
     } catch {
-      alert('Toggle failed')
+      alert('Toggle failed. Try again.')
     }
   }
 
@@ -152,7 +193,7 @@ const Menu = () => {
         </div>
         <button
           onClick={openAdd}
-          className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-all"
+          className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition-all min-h-[44px]"
         >
           <Plus className="w-4 h-4" />
           <span>Add Item</span>
@@ -165,7 +206,7 @@ const Menu = () => {
           <button
             key={cat}
             onClick={() => setFilterCategory(cat)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border ${
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all border min-h-[44px] ${
               filterCategory === cat
                 ? 'bg-blue-600 text-white border-blue-600'
                 : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
@@ -178,8 +219,9 @@ const Menu = () => {
 
       {/* Error */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-xl">
-          {error}
+        <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-xl flex items-start space-x-2">
+          <span>⚠️</span>
+          <span>{error}</span>
         </div>
       )}
 
@@ -197,7 +239,9 @@ const Menu = () => {
               <img
                 src={item.image}
                 alt={item.name}
+                loading="lazy"
                 className="w-full h-40 object-cover"
+                onError={(e) => { e.target.src = 'https://placehold.co/300x160/FFF3E0/E65100?text=Food' }}
               />
             )}
 
@@ -221,7 +265,7 @@ const Menu = () => {
                 {/* Availability Toggle */}
                 <button
                   onClick={() => toggleAvailability(item)}
-                  className={`flex items-center space-x-1 text-xs font-medium px-3 py-1.5 rounded-lg transition-all ${
+                  className={`flex items-center space-x-1 text-xs font-medium px-3 py-2 rounded-lg transition-all min-h-[44px] ${
                     item.isAvailable
                       ? 'bg-green-100 text-green-700 hover:bg-green-200'
                       : 'bg-red-100 text-red-700 hover:bg-red-200'
@@ -237,13 +281,15 @@ const Menu = () => {
                 <div className="flex space-x-2">
                   <button
                     onClick={() => openEdit(item)}
-                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                    aria-label="Edit item"
+                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all min-h-[44px] min-w-[44px] flex items-center justify-center"
                   >
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => deleteItem(item._id)}
-                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                    aria-label="Delete item"
+                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-all min-h-[44px] min-w-[44px] flex items-center justify-center"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -262,12 +308,24 @@ const Menu = () => {
               <h3 className="text-xl font-bold text-gray-900">
                 {editItem ? 'Edit Item' : 'Add New Item'}
               </h3>
-              <button onClick={closeForm} className="text-gray-400 hover:text-gray-600">
+              <button
+                onClick={closeForm}
+                aria-label="Close form"
+                className="text-gray-400 hover:text-gray-600 p-1 min-h-[44px] min-w-[44px] flex items-center justify-center"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {/* Error inside modal */}
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start space-x-2">
+                  <span>⚠️</span>
+                  <span>{error}</span>
+                </div>
+              )}
+
               {/* Name */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -279,7 +337,7 @@ const Menu = () => {
                   value={form.name}
                   onChange={e => setForm({ ...form, name: e.target.value })}
                   placeholder="e.g. Paneer Butter Masala"
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[48px]"
                 />
               </div>
 
@@ -310,7 +368,7 @@ const Menu = () => {
                     value={form.price}
                     onChange={e => setForm({ ...form, price: e.target.value })}
                     placeholder="199"
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[48px]"
                   />
                 </div>
                 <div>
@@ -320,7 +378,7 @@ const Menu = () => {
                   <select
                     value={form.category}
                     onChange={e => setForm({ ...form, category: e.target.value })}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[48px]"
                   >
                     {CATEGORIES.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
@@ -329,50 +387,48 @@ const Menu = () => {
                 </div>
               </div>
 
-              {/* Image Upload — replaces the old URL input */}
+              {/* Image Upload — Phase 7 Step 9: size check + compress hint */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Food Image
                 </label>
 
-                {/* Preview existing image */}
+                {/* Preview */}
                 {form.image && (
                   <img
                     src={form.image}
                     alt="Preview"
                     className="w-full h-36 object-cover rounded-xl mb-2 border border-gray-200"
+                    onError={(e) => { e.target.style.display = 'none' }}
                   />
                 )}
 
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={async (e) => {
-                    const file = e.target.files[0]
-                    if (!file) return
-
-                    const formData = new FormData()
-                    formData.append('image', file)
-
-                    try {
-                      const res = await fetch('/api/upload', {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${token}` },
-                        body: formData,
-                      })
-                      const data = await res.json()
-                      if (data.success) {
-                        setForm(prev => ({ ...prev, image: data.url }))
-                      } else {
-                        setError('Image upload failed')
-                      }
-                    } catch {
-                      setError('Image upload failed')
-                    }
-                  }}
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                  disabled={uploading}
+                  onChange={handleImageUpload}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 />
-                <p className="text-xs text-gray-400 mt-1">JPG, PNG, WebP — max 5MB</p>
+
+                {uploading && (
+                  <div className="flex items-center space-x-2 mt-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+                    <p className="text-xs text-blue-600">Uploading to Cloudinary...</p>
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-400 mt-1">
+                  JPG, PNG, WebP — max 5MB.{' '}
+                  <a
+                    href="https://squoosh.app"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 underline"
+                  >
+                    Compress here
+                  </a>{' '}before uploading for faster load.
+                </p>
               </div>
 
               {/* Availability */}
@@ -394,16 +450,16 @@ const Menu = () => {
                 <button
                   type="button"
                   onClick={closeForm}
-                  className="flex-1 border border-gray-200 text-gray-700 py-3 rounded-xl hover:bg-gray-50 transition-all font-medium"
+                  className="flex-1 border border-gray-200 text-gray-700 py-3 rounded-xl hover:bg-gray-50 transition-all font-medium min-h-[48px]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
-                  className="flex-1 bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700 transition-all font-medium disabled:opacity-50"
+                  disabled={saving || uploading}
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-xl hover:bg-blue-700 transition-all font-medium disabled:opacity-50 min-h-[48px]"
                 >
-                  {saving ? 'Saving...' : editItem ? 'Update Item' : 'Add Item'}
+                  {saving ? 'Saving...' : uploading ? 'Uploading...' : editItem ? 'Update Item' : 'Add Item'}
                 </button>
               </div>
             </form>

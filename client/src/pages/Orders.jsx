@@ -3,6 +3,8 @@ import { RefreshCw, ShoppingBag, Eye, Bell, X, ChevronDown } from 'lucide-react'
 import { io } from 'socket.io-client'
 import OrderDetailModal from '../components/OrderDetailModal'
 
+const SOCKET_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000'
+
 const STATUS_OPTIONS = ['Placed', 'Preparing', 'Out for Delivery', 'Delivered', 'Cancelled']
 
 const STATUS_COLORS = {
@@ -57,7 +59,7 @@ const Orders = () => {
 
   // Socket.io — real-time new order alert
   useEffect(() => {
-    const socket = io('http://localhost:5000', { transports: ['websocket'] })
+    const socket = io(SOCKET_URL, { transports: ['websocket'] })
     socket.on('new-order', (payload) => {
       fetchOrders()
       setNewOrderAlert(payload)
@@ -152,7 +154,7 @@ const Orders = () => {
               <p className="font-bold text-gray-900 text-sm">🍛 New Order!</p>
               <p className="text-gray-600 text-xs">{newOrderAlert.customerName} · ₹{newOrderAlert.totalAmount}</p>
             </div>
-            <button onClick={() => setAlertVisible(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+            <button onClick={() => setAlertVisible(false)} className="p-1 hover:bg-gray-100 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center">
               <X className="w-4 h-4 text-gray-400" />
             </button>
           </div>
@@ -167,7 +169,7 @@ const Orders = () => {
         </div>
         <button
           onClick={fetchOrders}
-          className="flex items-center space-x-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-xl transition-all font-semibold text-sm"
+          className="flex items-center space-x-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-xl transition-all font-semibold text-sm min-h-[44px]"
         >
           <RefreshCw className="w-4 h-4" />
           <span>Refresh</span>
@@ -221,7 +223,7 @@ const Orders = () => {
           <button
             key={status}
             onClick={() => setFilterStatus(status)}
-            className={`shrink-0 px-4 py-2 rounded-xl text-sm font-semibold transition-all border ${
+            className={`shrink-0 px-4 py-2 rounded-xl text-sm font-semibold transition-all border min-h-[44px] ${
               filterStatus === status
                 ? 'bg-orange-500 text-white border-orange-500'
                 : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
@@ -243,7 +245,7 @@ const Orders = () => {
       )}
 
       {/* Empty State */}
-      {filteredOrders.length === 0 && (
+      {filteredOrders.length === 0 && !loading && (
         <div className="bg-white rounded-2xl border border-gray-100 text-center py-20">
           <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-4" />
           <p className="text-gray-500 font-semibold">No orders found</p>
@@ -301,7 +303,7 @@ const Orders = () => {
 
                   <button
                     onClick={() => setSelectedOrder(order)}
-                    className="flex items-center space-x-1.5 text-sm font-semibold text-orange-500 hover:text-orange-600 bg-orange-50 hover:bg-orange-100 px-4 py-2 rounded-xl transition-all w-full justify-center"
+                    className="flex items-center space-x-1.5 text-sm font-semibold text-orange-500 hover:text-orange-600 bg-orange-50 hover:bg-orange-100 px-4 py-2 rounded-xl transition-all w-full justify-center min-h-[44px]"
                   >
                     <Eye className="w-4 h-4" />
                     <span>View Details</span>
@@ -315,7 +317,7 @@ const Orders = () => {
                           key={next}
                           onClick={() => updateStatus(order._id, next)}
                           disabled={updatingId === order._id}
-                          className={`w-full text-sm font-bold py-2.5 px-4 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center space-x-1.5 ${
+                          className={`w-full text-sm font-bold py-2.5 px-4 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center space-x-1.5 min-h-[44px] ${
                             next === 'Cancelled'
                               ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200'
                               : 'bg-orange-500 text-white hover:bg-orange-600'

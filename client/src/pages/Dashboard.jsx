@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { ShoppingBag, CheckCircle, Clock, TrendingUp, ChefHat, Bike, AlertCircle } from 'lucide-react'
 import { io } from 'socket.io-client'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+
+const SOCKET_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000'
 
 const STATUS_COLORS = {
   Placed:            'bg-yellow-100 text-yellow-800',
@@ -15,7 +16,6 @@ const Dashboard = () => {
   const [orders, setOrders]   = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
-  const [chartStats, setChartStats] = useState(null)
   const token = localStorage.getItem('token')
 
   const fetchOrders = async () => {
@@ -33,21 +33,11 @@ const Dashboard = () => {
     }
   }
 
-  const fetchStats = async () => {
-    try {
-      const res = await fetch('/api/orders/stats', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const data = await res.json()
-      if (data.success) setChartStats(data.data)
-    } catch {}
-  }
-
-  useEffect(() => { fetchOrders(); fetchStats() }, [])
+  useEffect(() => { fetchOrders() }, [])
 
   useEffect(() => {
-    const socket = io('http://localhost:5000', { transports: ['websocket'] })
-    socket.on('new-order', () => { fetchOrders(); fetchStats() })
+    const socket = io(SOCKET_URL, { transports: ['websocket'] })
+    socket.on('new-order', () => fetchOrders())
     return () => socket.disconnect()
   }, [])
 
@@ -75,6 +65,18 @@ const Dashboard = () => {
       <div className="text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4" />
         <p className="text-gray-500">Loading dashboard...</p>
+      </div>
+    </div>
+  )
+
+  if (error) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="text-center">
+        <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
+        <p className="text-red-600 font-semibold">{error}</p>
+        <button onClick={fetchOrders} className="mt-4 bg-orange-500 text-white px-6 py-2 rounded-xl hover:bg-orange-600 transition-all">
+          Retry
+        </button>
       </div>
     </div>
   )
@@ -162,26 +164,6 @@ const Dashboard = () => {
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-      </div>
-
-      {/* 7-Day Revenue Chart */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <h3 className="font-bold text-gray-900 mb-4">Revenue — Last 7 Days</h3>
-        {chartStats?.last7Days?.length > 0 ? (
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={chartStats.last7Days} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="_id" tick={{ fontSize: 12 }} tickFormatter={(d) => d.slice(5)} />
-              <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `₹${v}`} />
-              <Tooltip formatter={(v) => [`₹${v}`, 'Revenue']} />
-              <Bar dataKey="revenue" fill="#f97316" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
-          <div className="h-[220px] flex items-center justify-center text-gray-400 text-sm">
-            No order data in the last 7 days
           </div>
         )}
       </div>
